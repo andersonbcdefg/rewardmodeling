@@ -81,48 +81,47 @@ def process_webgpt(example):
         "dispreferred": re.sub(pattern, '', dispreferred)
     }
 
+def get_combined_datasets():
+    # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
+    shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
+    shp_dataset = shp_dataset.map(
+        process_shp, remove_columns=shp_dataset.column_names
+    )
 
-# process all datasets to have the same 3 columns: prompt, preferred, dispreferred
-shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
-shp_dataset = shp_dataset.map(
-    process_shp, remove_columns=shp_dataset.column_names
-)
+    hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
+    hh_dataset = hh_dataset.map(
+        process_anthropic, remove_columns=hh_dataset.column_names
+    )
 
-hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
-hh_dataset = hh_dataset.map(
-    process_anthropic, remove_columns=hh_dataset.column_names
-)
+    webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train")
+    webgpt_dataset = webgpt_dataset.map(
+        process_webgpt, remove_columns=webgpt_dataset.column_names
+    ).filter(
+        lambda example: example["preferred"] != "" and example["dispreferred"] != ""
+    )
 
-webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train")
-webgpt_dataset = webgpt_dataset.map(
-    process_webgpt, remove_columns=webgpt_dataset.column_names
-).filter(
-    lambda example: example["preferred"] != "" and example["dispreferred"] != ""
-)
+    total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
+    
+    combined = concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset]).shuffle(seed=42).flatten_indices()
+    combined = combined.map(
+        lambda example: {
+            "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
+        }
+    ).filter(
+        lambda example: example["length"] < 10000
+    )
 
-total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
-probabilities = (
-    len(shp_dataset) / total_samples,
-    len(hh_dataset) / total_samples,
-    len(webgpt_dataset) / total_samples,
-)
-combined = concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset]).shuffle(seed=42).flatten_indices()
-combined = combined.map(
-    lambda example: {
-        "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
+
+    median = sorted(combined["length"])[len(combined) // 2]
+    print("median length:", median)
+
+    long = combined.filter(lambda example: example["length"] > 1250)
+    short = combined.filter(lambda example: example["length"] <= 1250)
+
+    return {
+        "long": long,
+        "short": short,
     }
-).filter(
-    lambda example: example["length"] < 10000
-)
-
-# plt.hist(combined["length"], bins=100)
-# plt.savefig("lengths.png")
-median = sorted(combined["length"])[len(combined) // 2]
-print("median length:", median)
-
-long = combined.filter(lambda example: example["length"] > 1250)
-short = combined.filter(lambda example: example["length"] <= 1250)
-print(len(combined), len(long), len(short))
 
 def tokenize_function(examples, tokenizer, max_len):
     preferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
@@ -149,7 +148,7 @@ class PairwiseDataset(torch.utils.data.Dataset):
          self.chosen_attn_masks = []
          self.rejected_input_ids = []
          self.rejected_attn_masks = []
-         for pair in tqdm(pairs):
+         for pair in pairs:
              chosen, rejected = pair["chosen"], pair["rejected"]
              chosen_encodings_dict = tokenizer(
                  "<|startoftext|>" + chosen + "<|endoftext|>",
