@@ -1,2 +1,2 @@
 # reward-modeling
-Train reward models for reinforcement learning from human feedback (RLHF).
+Train reward models for reinforcement learning from human feedback (RLHF). I use a pretrained long-context BERT model from MosaicML, and fine-tune it on pairwise preference data from a variety of sources. The resulting reward model can be used downstream to tune language models with RLHF.
