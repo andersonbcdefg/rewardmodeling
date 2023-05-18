@@ -108,12 +108,15 @@ def get_combined_datasets():
             "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
         }
     ).filter(
-        lambda example: example["length"] < 10000
+        lambda example: example["length"] < 10000 # characters, not tokens. 10000ch ~= 2500 tokens
     )
 
     median = sorted(combined["length"])[len(combined) // 2]
     print("median length:", median)
 
+    # this splits the dataset into two parts: long and short. we save computation on the short examples by not wasting padding.
+    # at training time, to avoid the model swinging wildly back and forth, the resulting dataloaders should be interleaved
+    # e.g. using utilities from itertools (i think this should work)
     long = combined.filter(lambda example: example["length"] > 1250)
     short = combined.filter(lambda example: example["length"] <= 1250)
 
@@ -127,16 +130,16 @@ def tokenize_function(examples, tokenizer, max_len):
     dispreferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
     preferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
     dispreferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
-    for i, example in enumerate(examples):
-        prompt_tokenized = tokenizer.encode(example["prompt"], add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
+    for i, (prompt, preferred, dispreferred) in enumerate(zip(examples['prompt'], examples['preferred'], examples['dispreferred'])):
+        prompt_tokenized = tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
         
-        preferred_tokenized = tokenizer.encode(example["preferred"], add_special_tokens=False, return_tensors="pt").view(-1) # response should not have CLS, it continues the prompt
+        preferred_tokenized = tokenizer.encode(preferred, add_special_tokens=False, return_tensors="pt").view(-1) # response should not have CLS, it continues the prompt
         prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))
         preferred_mask = torch.cat((torch.ones(len(prompt_with_preferred)), torch.zeros(max_len - len(prompt_with_preferred))))
         preferred_input_ids[i, :] = prompt_with_preferred[:max_len]
         preferred_attention_masks[i, :] = preferred_mask[:max_len]
 
-        dispreferred_tokenized = tokenizer.encode(example["dispreferred"], add_special_tokens=False, return_tensors="pt").view(-1) 
+        dispreferred_tokenized = tokenizer.encode(dispreferred, add_special_tokens=False, return_tensors="pt").view(-1) 
         prompt_with_dispreferred = torch.cat((prompt_tokenized, dispreferred_tokenized))
         dispreferred_mask = torch.cat((torch.ones(len(prompt_with_dispreferred)), torch.zeros(max_len - len(prompt_with_dispreferred))))
         dispreferred_input_ids[i, :] = prompt_with_dispreferred[:max_len]
