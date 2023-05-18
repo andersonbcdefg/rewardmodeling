@@ -126,10 +126,11 @@ def get_combined_datasets():
     }
 
 def tokenize_function(examples, tokenizer, max_len):
-    preferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
-    dispreferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
-    preferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
-    dispreferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
+    n_examples = len(examples['prompt'])
+    preferred_input_ids = torch.full((n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long)
+    dispreferred_input_ids = torch.full((n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long)
+    preferred_attention_masks = torch.zeros((n_examples, max_len), dtype=torch.long)
+    dispreferred_attention_masks = torch.zeros((n_examples, max_len), dtype=torch.long)
     for i, (prompt, preferred, dispreferred) in enumerate(zip(examples['prompt'], examples['preferred'], examples['dispreferred'])):
         prompt_tokenized = tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
         
