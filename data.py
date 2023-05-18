@@ -134,16 +134,16 @@ def tokenize_function(examples, tokenizer, max_len):
         prompt_tokenized = tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
         
         preferred_tokenized = tokenizer.encode(preferred, add_special_tokens=False, return_tensors="pt").view(-1) # response should not have CLS, it continues the prompt
-        prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))
+        prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))[:max_len]
         preferred_mask = torch.cat((torch.ones(len(prompt_with_preferred)), torch.zeros(max_len - len(prompt_with_preferred))))
-        preferred_input_ids[i, :] = prompt_with_preferred[:max_len]
-        preferred_attention_masks[i, :] = preferred_mask[:max_len]
+        preferred_input_ids[i, :len(prompt_with_preferred)] = prompt_with_preferred
+        preferred_attention_masks[i, :] = preferred_mask
 
         dispreferred_tokenized = tokenizer.encode(dispreferred, add_special_tokens=False, return_tensors="pt").view(-1) 
-        prompt_with_dispreferred = torch.cat((prompt_tokenized, dispreferred_tokenized))
+        prompt_with_dispreferred = torch.cat((prompt_tokenized, dispreferred_tokenized))[:max_len]
         dispreferred_mask = torch.cat((torch.ones(len(prompt_with_dispreferred)), torch.zeros(max_len - len(prompt_with_dispreferred))))
-        dispreferred_input_ids[i, :] = prompt_with_dispreferred[:max_len]
-        dispreferred_attention_masks[i, :] = dispreferred_mask[:max_len]
+        dispreferred_input_ids[i, :len(prompt_with_dispreferred)] = prompt_with_dispreferred
+        dispreferred_attention_masks[i, :] = dispreferred_mask
 
     return {
         "preferred_input_ids": preferred_input_ids,
