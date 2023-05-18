@@ -147,46 +147,4 @@ def tokenize_function(examples, tokenizer, max_len):
         "preferred_attention_masks": preferred_attention_masks,
         "dispreferred_input_ids": dispreferred_input_ids,
         "dispreferred_attention_masks": dispreferred_attention_masks
-    }  
-
-# adapted from https://wandb.ai/carperai/summarize_RLHF/reports/Implementing-RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2
-# for this implementation, assume the hf_dataset is already tokenized!
-class PairwiseDataset(torch.utils.data.Dataset):
-     def __init__(self, hf_dataset):
-         self.chosen_input_ids = []
-         self.chosen_attn_masks = []
-         self.rejected_input_ids = []
-         self.rejected_attn_masks = []
-         for pair in pairs:
-             chosen, rejected = pair["chosen"], pair["rejected"]
-             chosen_encodings_dict = tokenizer(
-                 "<|startoftext|>" + chosen + "<|endoftext|>",
-                 truncation=True,
-                 max_length=max_length,
-                 padding="max_length",
-                 return_tensors="pt",
-             )
-             rejected_encodings_dict = tokenizer(
-                 "<|startoftext|>" + rejected + "<|endoftext|>",
-                 truncation=True,
-                 max_length=max_length,
-                 padding="max_length",
-                 return_tensors="pt",
-             )
-             self.chosen_input_ids.append(chosen_encodings_dict["input_ids"])
-             self.chosen_attn_masks.append(chosen_encodings_dict["attention_mask"])
-             self.rejected_input_ids.append(rejected_encodings_dict["input_ids"])
-             self.rejected_attn_masks.append(rejected_encodings_dict["attention_mask"])
-
-
-     def __len__(self):
-         return len(self.chosen_input_ids)
-
-
-     def __getitem__(self, idx):
-         return (
-             self.chosen_input_ids[idx],
-             self.chosen_attn_masks[idx],
-             self.rejected_input_ids[idx],
-             self.rejected_attn_masks[idx],
-         )
+    }
