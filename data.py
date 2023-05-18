@@ -100,7 +100,7 @@ def get_combined_datasets():
         lambda example: example["preferred"] != "" and example["dispreferred"] != ""
     )
 
-    total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
+    # total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
     
     combined = concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset]).shuffle(seed=42).flatten_indices()
     combined = combined.map(
@@ -110,7 +110,6 @@ def get_combined_datasets():
     ).filter(
         lambda example: example["length"] < 10000
     )
-
 
     median = sorted(combined["length"])[len(combined) // 2]
     print("median length:", median)
@@ -126,24 +125,34 @@ def get_combined_datasets():
 def tokenize_function(examples, tokenizer, max_len):
     preferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
     dispreferred_input_ids = torch.full((len(examples), max_len), tokenizer.pad_token_id, dtype=torch.long)
+    preferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
+    dispreferred_attention_masks = torch.zeros((len(examples), max_len), dtype=torch.long)
     for i, example in enumerate(examples):
-        prompt_tokenized = tokenizer.encode(example["prompt"], add_special_tokens=False)
-        preferred_tokenized = tokenizer.encode(example["preferred"], add_special_tokens=False)
-        dispreferred_tokenized = tokenizer.encode(example["dispreferred"], add_special_tokens=False)
-        preferred_input_ids[i, :len(prompt_tokenized) + len(preferred_tokenized)] = torch.tensor(prompt_tokenized + preferred_tokenized)
-        dispreferred_input_ids[i, :len(prompt_tokenized) + len(dispreferred_tokenized)] = torch.tensor(prompt_tokenized + dispreferred_tokenized)
+        prompt_tokenized = tokenizer.encode(example["prompt"], add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
+        
+        preferred_tokenized = tokenizer.encode(example["preferred"], add_special_tokens=False, return_tensors="pt").view(-1) # response should not have CLS, it continues the prompt
+        prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))
+        preferred_mask = torch.cat((torch.ones(len(prompt_with_preferred)), torch.zeros(max_len - len(prompt_with_preferred))))
+        preferred_input_ids[i, :] = prompt_with_preferred[:max_len]
+        preferred_attention_masks[i, :] = preferred_mask[:max_len]
+
+        dispreferred_tokenized = tokenizer.encode(example["dispreferred"], add_special_tokens=False, return_tensors="pt").view(-1) 
+        prompt_with_dispreferred = torch.cat((prompt_tokenized, dispreferred_tokenized))
+        dispreferred_mask = torch.cat((torch.ones(len(prompt_with_dispreferred)), torch.zeros(max_len - len(prompt_with_dispreferred))))
+        dispreferred_input_ids[i, :] = prompt_with_dispreferred[:max_len]
+        dispreferred_attention_masks[i, :] = dispreferred_mask[:max_len]
 
     return {
         "preferred_input_ids": preferred_input_ids,
-        "preferred_attention_mask": preferred_input_ids != tokenizer.pad_token_id,
+        "preferred_attention_masks": preferred_attention_masks,
         "dispreferred_input_ids": dispreferred_input_ids,
-        "dispreferred_attention_mask": dispreferred_input_ids != tokenizer.pad_token_id,
+        "dispreferred_attention_masks": dispreferred_attention_masks
     }  
-    # return tokenizer(examples["prompt"], examples["preferred"], examples["dispreferred"], truncation=True)
 
-# taken from https://wandb.ai/carperai/summarize_RLHF/reports/Implementing-RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2
+# adapted from https://wandb.ai/carperai/summarize_RLHF/reports/Implementing-RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2
+# for this implementation, assume the hf_dataset is already tokenized!
 class PairwiseDataset(torch.utils.data.Dataset):
-     def __init__(self, pairs, tokenizer, max_length):
+     def __init__(self, hf_dataset):
          self.chosen_input_ids = []
          self.chosen_attn_masks = []
          self.rejected_input_ids = []
