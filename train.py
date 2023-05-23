@@ -108,7 +108,7 @@ def train(
 
     model.train()
     total_tokens = 0
-    progress_bar = tqdm(range(len(short_dataloader) + len(long_dataloader)))
+    progress_bar = tqdm.tqdm(range(len(short_dataloader) + len(long_dataloader)))
     for index, batch in enumerate(short_dataloader):
         input_ids, attn_mask = concat_batch(batch)
         total_tokens += input_ids.numel()
