@@ -34,7 +34,7 @@ def concat_batch(batch):
 
 
 def train(
-    wandb_api_key,
+    wandb_api_key=None,
     project_name="train_reward_model",
     model_name="sileod/deberta-v3-base-tasksource-nli",
     freeze_layers=0,
@@ -90,7 +90,10 @@ def train(
     ) = accelerator.prepare(
         short_dataloader, long_dataloader, eval_dataloader, model, optimizer
     )
-    wandb.login(key=wandb_api_key)
+    if wandb_api_key is not None:
+        wandb.login(key=wandb_api_key)
+    else:
+        wandb.login()
     wandb.init(
         project=project_name,
         config={
