@@ -158,9 +158,11 @@ def train(
             accelerator.wait_for_everyone()
             accelerator.save_state(output_dir="checkpoints")
 
-    print("Training complete. Saving final model...")
-    unwrapped_model = accelerator.unwrap_model(model)
-    torch.save(unwrapped_model.state_dict(), "final_model.pt")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        print("Training complete. Saving final model...")
+        unwrapped_model = accelerator.unwrap_model(model)
+        torch.save(unwrapped_model.state_dict(), "final_model.pt")
 
 if __name__ == "__main__":
     fire.Fire(train)
