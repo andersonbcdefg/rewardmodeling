@@ -1,5 +1,4 @@
 import fire
-import tqdm
 import torch
 from accelerate import Accelerator
 from data import get_dataloaders
@@ -98,6 +97,7 @@ def train(
             wandb.login()
     wandb.init(
         project=project_name,
+        group="DDP",
         config={
             "model_name": model_name,
             # "model": model.config.__dict__,
@@ -107,8 +107,9 @@ def train(
     )
 
     model.train()
+    if accelerator.is_main_process:
+        print("Training begins, with short_bsz", short_microbatch_size, "and long_bsz", long_microbatch_size)
     total_tokens = 0
-    progress_bar = tqdm.tqdm(range(len(short_dataloader) + len(long_dataloader)))
     for index, batch in enumerate(short_dataloader):
         input_ids, attn_mask = concat_batch(batch)
         total_tokens += input_ids.numel()
@@ -128,7 +129,6 @@ def train(
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
-        progress_bar.update(1)
         if index % save_every == 0:
             accelerator.wait_for_everyone()
             accelerator.save_state(output_dir="checkpoints")
@@ -158,7 +158,6 @@ def train(
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
-        progress_bar.update(1)
         if index % save_every == 0:
             accelerator.wait_for_everyone()
             accelerator.save_state(output_dir="checkpoints")
