@@ -1,7 +1,10 @@
 import re
+from functools import partial
+from itertools import chain
 import torch
 import matplotlib.pyplot as plt
 from datasets import load_dataset, concatenate_datasets
+from transformers import DefaultDataCollator
 
 def process_shp(example):
     if example['labels'] == 1:
@@ -81,7 +84,7 @@ def process_webgpt(example):
         "dispreferred": re.sub(pattern, '', dispreferred)
     }
 
-def get_combined_datasets():
+def get_train_dataset():
     # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
     shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
     shp_dataset = shp_dataset.map(
@@ -115,8 +118,6 @@ def get_combined_datasets():
     print("median length:", median)
 
     # this splits the dataset into two parts: long and short. we save computation on the short examples by not wasting padding.
-    # at training time, to avoid the model swinging wildly back and forth, the resulting dataloaders should be interleaved
-    # e.g. using utilities from itertools (i think this should work)
     long = combined.filter(lambda example: example["length"] > 1250)
     short = combined.filter(lambda example: example["length"] <= 1250)
 
@@ -124,6 +125,28 @@ def get_combined_datasets():
         "long": long,
         "short": short,
     }
+
+def get_eval_dataset():
+    shp_dataset = load_dataset("stanfordnlp/SHP", split="validation")
+    shp_dataset = shp_dataset.map(
+        process_shp, remove_columns=shp_dataset.column_names
+    )
+
+    hh_dataset = load_dataset("Anthropic/hh-rlhf", split="test")
+    hh_dataset = hh_dataset.map(
+        process_anthropic, remove_columns=hh_dataset.column_names
+    )
+
+    combined = concatenate_datasets([shp_dataset, hh_dataset]).shuffle(seed=42).flatten_indices()
+    combined = combined.map(
+        lambda example: {
+            "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
+        }
+    ).filter(
+        lambda example: example["length"] < 10000 # characters, not tokens. 10000ch ~= 2500 tokens
+    )
+
+    return combined
 
 def tokenize_function(examples, tokenizer, max_len):
     n_examples = len(examples['prompt'])
@@ -152,3 +175,27 @@ def tokenize_function(examples, tokenizer, max_len):
         "dispreferred_input_ids": dispreferred_input_ids,
         "dispreferred_attention_masks": dispreferred_attention_masks
     }
+
+def get_dataloaders(pretokenized=True, short_bsz=32, long_bsz=8, tokenizer=None):
+    if pretokenized:
+        data_long_tokenized = load_dataset("andersonbcdefg/reward-modeling-long-tokenized", split="train")
+        data_short_tokenized = load_dataset("andersonbcdefg/reward-modeling-short-tokenized", split="train")
+        data_eval_tokenized = load_dataset("andersonbcdefg/reward-modeling-eval-tokenized", split="validation")
+
+    else:
+        train_dataset = get_train_dataset()
+        eval_dataset = get_eval_dataset()
+        data_short = train_dataset["short"]
+        data_long = train_dataset["long"]
+
+        data_long_tokenized = data_long.map(partial(tokenize_function, tokenizer=tokenizer, max_len=2048), 
+            batched=True, remove_columns=data_long.column_names)
+        data_short_tokenized = data_short.map(partial(tokenize_function, tokenizer=tokenizer, max_len=1024),
+            batched=True, remove_columns=data_short.column_names)
+        data_eval_tokenized = eval_dataset.map(partial(tokenize_function, tokenizer=tokenizer, max_len=2048),
+            batched=True, remove_columns=eval_dataset.column_names)
+        
+    short_dataloader = torch.utils.data.DataLoader(data_short_tokenized, batch_size=short_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
+    long_dataloader = torch.utils.data.DataLoader(data_long_tokenized, batch_size=long_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
+    eval_dataloader = torch.utils.data.DataLoader(data_eval_tokenized, batch_size=long_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
+    return short_dataloader, long_dataloader, eval_dataloader
