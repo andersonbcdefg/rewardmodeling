@@ -90,15 +90,17 @@ def train(
     ) = accelerator.prepare(
         short_dataloader, long_dataloader, eval_dataloader, model, optimizer
     )
-    if wandb_api_key is not None:
-        wandb.login(key=wandb_api_key)
-    else:
-        wandb.login()
+
+    if accelerator.is_main_process:
+        if wandb_api_key is not None:
+            wandb.login(key=wandb_api_key)
+        else:
+            wandb.login()
     wandb.init(
         project=project_name,
         config={
             "model_name": model_name,
-            "model": model.config.__dict__,
+            # "model": model.config.__dict__,
             "freeze_layers": freeze_layers,
             "scheduler": scheduler_kwargs,
         },
