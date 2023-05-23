@@ -68,7 +68,7 @@ def train(
     )
 
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=max_lr, betas=(0.9, 0.95), fused=True
+        model.parameters(), lr=max_lr, betas=(0.9, 0.95) # , fused=True (doesn't work in torch < 2.0.0)
     )
     # constant learning rate
     scheduler_kwargs = {
