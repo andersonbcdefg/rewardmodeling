@@ -1,3 +1,4 @@
+import os
 import fire
 import torch
 from accelerate import Accelerator
@@ -44,6 +45,7 @@ def train(
     short_microbatch_size=16,
     long_microbatch_size=4,
     save_every=1000,
+    save_dir="checkpoints",
 ):
     accelerator = Accelerator(
         mixed_precision="bf16",
@@ -161,13 +163,13 @@ def train(
             optimizer.zero_grad(set_to_none=True)
         if index % save_every == 0:
             accelerator.wait_for_everyone()
-            accelerator.save_state(output_dir="checkpoints")
+            accelerator.save_state(output_dir=save_dir)
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         print("Training complete. Saving final model...")
         unwrapped_model = accelerator.unwrap_model(model)
-        torch.save(unwrapped_model.state_dict(), "final_model.pt")
+        torch.save(unwrapped_model.state_dict(), os.path.join(save_dir, "final_model.pt"))
 
 if __name__ == "__main__":
     fire.Fire(train)
