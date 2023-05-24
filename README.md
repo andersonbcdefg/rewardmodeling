@@ -1,2 +1,2 @@
 # reward-modeling
-Train reward models for reinforcement learning from human feedback (RLHF). I use a pretrained long-context BERT model from MosaicML, and fine-tune it on pairwise preference data from a variety of sources. The resulting reward model can be used downstream to tune language models with RLHF.
+Train reward models for reinforcement learning from human feedback (RLHF). I use a long-context DeBERTa-v3 model, which has already been pretrained with a masked language modeling objective and finetuned on the [tasksource](https://github.com/sileod/tasksource) dataset, a massive multitask classification dataset. I fine-tune it further on over 500,000 pairs samples of human preference data.
