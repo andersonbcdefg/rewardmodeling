@@ -100,7 +100,7 @@ def train(
             wandb.login()
     wandb.init(
         project=project_name,
-        group="DDP",
+        group="DDP2",
         config={
             "model_name": model_name,
             # "model": model.config.__dict__,
