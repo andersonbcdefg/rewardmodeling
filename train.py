@@ -38,10 +38,11 @@ def train(
     model_name="sileod/deberta-v3-base-tasksource-nli",
     freeze_layers=0,
     max_lr=3.0e-5,
-    clip_grad_norm=None,
+    short_grad_clip=None,
+    long_grad_clip=None,
     effective_batch_size=64,
-    short_microbatch_size=64,
-    long_microbatch_size=16,
+    short_microbatch_size=16,
+    long_microbatch_size=4,
     save_every=1000,
 ):
     accelerator = Accelerator(
@@ -124,8 +125,8 @@ def train(
                 }
             )
             accelerator.backward(micro_batch_loss)
-            if clip_grad_norm is not None:
-                accelerator.clip_grad_norm_(model.parameters(), clip_grad_norm)
+            if short_grad_clip is not None:
+                accelerator.clip_grad_norm_(model.parameters(), short_grad_clip)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
@@ -153,8 +154,8 @@ def train(
                 }
             )
             accelerator.backward(micro_batch_loss)
-            if clip_grad_norm is not None:
-                accelerator.clip_grad_norm_(model.parameters(), clip_grad_norm)
+            if long_grad_clip is not None:
+                accelerator.clip_grad_norm_(model.parameters(), long_grad_clip)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
