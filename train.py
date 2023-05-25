@@ -2,7 +2,7 @@ import os
 import fire
 import torch
 from accelerate import Accelerator
-from data import get_dataloaders
+from data import get_train_dataloaders
 from transformers import AutoModelForSequenceClassification
 import wandb
 
@@ -67,7 +67,7 @@ def train(
                 if layer_num < freeze_layers:
                     p.requires_grad = False
 
-    short_dataloader, long_dataloader, eval_dataloader = get_dataloaders(
+    short_dataloader, long_dataloader = get_train_dataloaders(
         pretokenized=True,
         short_bsz=short_microbatch_size,
         long_bsz=long_microbatch_size,
