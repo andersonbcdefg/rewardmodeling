@@ -58,11 +58,15 @@ def evaluate(
     )
 
     # Subsample for efficiency & evaluate!
+    results = {}
     for name, loader in dataloaders.items():
         subset = islice(loader, sample_every - 1, None, sample_every)
         n_batches = len(loader) // sample_every
         result = eval_loop(model, subset, n_batches, torch.device("cuda"))
-        print(f"{name} accuracy: {result}")
+        results[name] = result
+
+    for name, result in results.items():
+        print(f"{name}: {result:.4f}")
 
 
 if __name__ == "__main__":
