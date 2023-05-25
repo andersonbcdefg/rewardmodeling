@@ -6,18 +6,20 @@ import matplotlib.pyplot as plt
 from datasets import load_dataset, concatenate_datasets
 from transformers import DefaultDataCollator
 
+
 def process_shp(example):
-    if example['labels'] == 1:
-        preferred = example['human_ref_A']
-        dispreferred = example['human_ref_B']
+    if example["labels"] == 1:
+        preferred = example["human_ref_A"]
+        dispreferred = example["human_ref_B"]
     else:
-        preferred = example['human_ref_B']
-        dispreferred = example['human_ref_A']
+        preferred = example["human_ref_B"]
+        dispreferred = example["human_ref_A"]
     return {
         "prompt": example["history"],
         "preferred": preferred,
         "dispreferred": dispreferred,
     }
+
 
 def split_by_prefix(A, B):
     shared_prefix = ""
@@ -25,11 +27,12 @@ def split_by_prefix(A, B):
         if A[i] != B[i]:
             break
         shared_prefix += A[i]
-        
-    A_suffix = A[len(shared_prefix):]
-    B_suffix = B[len(shared_prefix):]
-    
+
+    A_suffix = A[len(shared_prefix) :]
+    B_suffix = B[len(shared_prefix) :]
+
     return (shared_prefix, A_suffix, B_suffix)
+
 
 def split_by_assistant(s):
     split_string = "Assistant:"
@@ -37,15 +40,17 @@ def split_by_assistant(s):
     if index == -1:
         return (s, "")
     else:
-        prefix = s[:index+len(split_string)]
-        suffix = s[index+len(split_string):]
+        prefix = s[: index + len(split_string)]
+        suffix = s[index + len(split_string) :]
         return (prefix, suffix)
 
 
 def process_anthropic(example):
     # find longest shared prefix
-    shared_prefix, chosen_suffix, rejected_suffix = split_by_prefix(example["chosen"], example["rejected"])
-    
+    shared_prefix, chosen_suffix, rejected_suffix = split_by_prefix(
+        example["chosen"], example["rejected"]
+    )
+
     # split off the part of the prompt up to and including the last "Assistant:"
     prompt, shared_suffix = split_by_assistant(shared_prefix)
 
@@ -55,18 +60,19 @@ def process_anthropic(example):
         "dispreferred": shared_suffix + rejected_suffix,
     }
 
+
 def process_webgpt(example):
     # Define the regex pattern
-    pattern = r'\[\d{1,2}(?:,\s*\d{1,2})*\]'
-    answer_1 = example['answer_1']
-    answer_0 = example['answer_0']
+    pattern = r"\[\d{1,2}(?:,\s*\d{1,2})*\]"
+    answer_1 = example["answer_1"]
+    answer_0 = example["answer_0"]
     # print(answer_1, "||", answer_0)
 
-    prompt = example['question']['full_text']
-    if example['score_0'] > 0:
+    prompt = example["question"]["full_text"]
+    if example["score_0"] > 0:
         preferred = answer_0
         dispreferred = answer_1
-    elif example['score_1'] > 0:
+    elif example["score_1"] > 0:
         preferred = answer_1
         dispreferred = answer_0
     else:
@@ -80,16 +86,29 @@ def process_webgpt(example):
         # dispreferred = ""
     return {
         "prompt": prompt,
-        "preferred": re.sub(pattern, '', preferred),
-        "dispreferred": re.sub(pattern, '', dispreferred)
+        "preferred": re.sub(pattern, "", preferred),
+        "dispreferred": re.sub(pattern, "", dispreferred),
     }
+
+
+def process_alpaca(example):
+    prompt = example["instruction"]
+    if example["input"] != "":
+        prompt += "\nInput: "
+        prompt += example["input"]
+    if example["preference"] == 1:
+        preferred = example["output_1"]
+        dispreferred = example["output_2"]
+    else:
+        preferred = example["output_2"]
+        dispreferred = example["output_1"]
+    return {"prompt": prompt, "preferred": preferred, "dispreferred": dispreferred}
+
 
 def get_train_dataset():
     # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
     shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
-    shp_dataset = shp_dataset.map(
-        process_shp, remove_columns=shp_dataset.column_names
-    )
+    shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
 
     hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
     hh_dataset = hh_dataset.map(
@@ -104,14 +123,21 @@ def get_train_dataset():
     )
 
     # total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
-    
-    combined = concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset]).shuffle(seed=42).flatten_indices()
+
+    combined = (
+        concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset])
+        .shuffle(seed=42)
+        .flatten_indices()
+    )
     combined = combined.map(
         lambda example: {
-            "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
+            "length": len(example["prompt"])
+            + len(example["preferred"])
+            + len(example["dispreferred"]),
         }
     ).filter(
-        lambda example: example["length"] < 10000 # characters, not tokens. 10000ch ~= 2500 tokens
+        lambda example: example["length"]
+        < 10000  # characters, not tokens. 10000ch ~= 2500 tokens
     )
 
     median = sorted(combined["length"])[len(combined) // 2]
@@ -126,76 +152,236 @@ def get_train_dataset():
         "short": short,
     }
 
-def get_eval_dataset():
+
+def get_eval_datasets():
     shp_dataset = load_dataset("stanfordnlp/SHP", split="validation")
-    shp_dataset = shp_dataset.map(
-        process_shp, remove_columns=shp_dataset.column_names
-    )
+    shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
 
     hh_dataset = load_dataset("Anthropic/hh-rlhf", split="test")
     hh_dataset = hh_dataset.map(
         process_anthropic, remove_columns=hh_dataset.column_names
     )
 
-    combined = concatenate_datasets([shp_dataset, hh_dataset]).shuffle(seed=42).flatten_indices()
-    combined = combined.map(
-        lambda example: {
-            "length": len(example["prompt"]) + len(example["preferred"]) + len(example["dispreferred"]),
-        }
-    ).filter(
-        lambda example: example["length"] < 10000 # characters, not tokens. 10000ch ~= 2500 tokens
+    alpaca_gpt4_dataset = load_dataset(
+        "tatsu-lab/alpaca_farm", "alpaca_gpt4_preference", split="preference"
+    )
+    alpaca_gpt4_dataset = alpaca_gpt4_dataset.map(
+        process_alpaca, remove_columns=alpaca_gpt4_dataset.column_names
     )
 
-    return combined
+    alpaca_human_dataset = load_dataset(
+        "tatsu-lab/alpaca_farm", "alpaca_human_preference", split="preference"
+    )
+    alpaca_human_dataset = alpaca_human_dataset.map(
+        process_alpaca, remove_columns=alpaca_human_dataset.column_names
+    )
 
-def tokenize_function(examples, tokenizer, max_len):
-    n_examples = len(examples['prompt'])
-    preferred_input_ids = torch.full((n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long)
-    dispreferred_input_ids = torch.full((n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long)
+    return {
+        "shp": shp_dataset,
+        "hh": hh_dataset,
+        "alpaca_gpt4": alpaca_gpt4_dataset,
+        "alpaca_human": alpaca_human_dataset,
+    }
+
+
+def tokenize_function(examples, tokenizer, max_len, use_special_tokens=True):
+    n_examples = len(examples["prompt"])
+    preferred_input_ids = torch.full(
+        (n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long
+    )
+    dispreferred_input_ids = torch.full(
+        (n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long
+    )
     preferred_attention_masks = torch.zeros((n_examples, max_len), dtype=torch.long)
     dispreferred_attention_masks = torch.zeros((n_examples, max_len), dtype=torch.long)
-    for i, (prompt, preferred, dispreferred) in enumerate(zip(examples['prompt'], examples['preferred'], examples['dispreferred'])):
-        prompt_tokenized = tokenizer.encode(prompt, add_special_tokens=True, return_tensors="pt").view(-1) # prompt will have CLS and end with SEP
-        
-        preferred_tokenized = tokenizer.encode(preferred, add_special_tokens=False, return_tensors="pt").view(-1) # response should not have CLS, it continues the prompt
-        prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))[:max_len]
-        preferred_mask = torch.cat((torch.ones(len(prompt_with_preferred)), torch.zeros(max_len - len(prompt_with_preferred))))
-        preferred_input_ids[i, :len(prompt_with_preferred)] = prompt_with_preferred
+    for i, (prompt, preferred, dispreferred) in enumerate(
+        zip(examples["prompt"], examples["preferred"], examples["dispreferred"])
+    ):
+        prompt_tokenized = tokenizer.encode(
+            prompt, add_special_tokens=use_special_tokens, return_tensors="pt"
+        ).view(
+            -1
+        )  # if special tokens, prompt will have CLS and end with SEP
+
+        preferred_tokenized = tokenizer.encode(
+            preferred, add_special_tokens=False, return_tensors="pt"
+        ).view(
+            -1
+        )  # response should not have CLS, it continues the prompt
+        prompt_with_preferred = torch.cat((prompt_tokenized, preferred_tokenized))[
+            :max_len
+        ]
+        preferred_mask = torch.cat(
+            (
+                torch.ones(len(prompt_with_preferred)),
+                torch.zeros(max_len - len(prompt_with_preferred)),
+            )
+        )
+        preferred_input_ids[i, : len(prompt_with_preferred)] = prompt_with_preferred
         preferred_attention_masks[i, :] = preferred_mask
 
-        dispreferred_tokenized = tokenizer.encode(dispreferred, add_special_tokens=False, return_tensors="pt").view(-1) 
-        prompt_with_dispreferred = torch.cat((prompt_tokenized, dispreferred_tokenized))[:max_len]
-        dispreferred_mask = torch.cat((torch.ones(len(prompt_with_dispreferred)), torch.zeros(max_len - len(prompt_with_dispreferred))))
-        dispreferred_input_ids[i, :len(prompt_with_dispreferred)] = prompt_with_dispreferred
+        dispreferred_tokenized = tokenizer.encode(
+            dispreferred, add_special_tokens=False, return_tensors="pt"
+        ).view(
+            -1
+        )  # same story here
+        prompt_with_dispreferred = torch.cat(
+            (prompt_tokenized, dispreferred_tokenized)
+        )[:max_len]
+        dispreferred_mask = torch.cat(
+            (
+                torch.ones(len(prompt_with_dispreferred)),
+                torch.zeros(max_len - len(prompt_with_dispreferred)),
+            )
+        )
+        dispreferred_input_ids[
+            i, : len(prompt_with_dispreferred)
+        ] = prompt_with_dispreferred
         dispreferred_attention_masks[i, :] = dispreferred_mask
 
     return {
         "preferred_input_ids": preferred_input_ids,
         "preferred_attention_masks": preferred_attention_masks,
         "dispreferred_input_ids": dispreferred_input_ids,
-        "dispreferred_attention_masks": dispreferred_attention_masks
+        "dispreferred_attention_masks": dispreferred_attention_masks,
     }
 
-def get_dataloaders(pretokenized=True, short_bsz=32, long_bsz=8, tokenizer=None):
+
+def build_steamshp_prompt(prompt, a, b, tokenizer, max_len=512):
+    prompt_tokens = tokenizer.encode(["POST: " + prompt], return_tensors="pt").view(-1)
+    a_tokens = tokenizer.encode(
+        ["\n\nRESPONSE A: " + a + "\n\n"], return_tensors="pt"
+    ).view(-1)
+    b_tokens = tokenizer.encode(
+        ["RESPONSE B: " + b + "\n\n"], return_tensors="pt"
+    ).view(-1)
+    end_tokens = tokenizer.encode(
+        ["Which response is better? RESPONSE"], return_tensors="pt"
+    ).view(-1)
+    all_but_prompt = torch.cat((a_tokens, b_tokens, end_tokens))
+    if len(all_but_prompt) > max_len:
+        return all_but_prompt[-max_len:]
+    elif len(all_but_prompt) + len(prompt_tokens) > max_len:
+        tokens_left = max_len - len(all_but_prompt)
+        return torch.cat((prompt_tokens[-tokens_left:], all_but_prompt))
+    else:
+        return torch.cat((prompt_tokens, all_but_prompt))
+
+
+def tokenize_fn_for_steamshp(examples, tokenizer, max_len=512):
+    n_examples = len(examples["prompt"])
+    input_ids = torch.full(
+        (2 * n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long
+    )
+    attention_masks = torch.zeros(
+        (2 * n_examples, max_len), tokenizer.pad_token_id, dtype=torch.long
+    )
+
+    for i, (prompt, preferred, dispreferred) in enumerate(
+        zip(examples["prompt"], examples["preferred"], examples["dispreferred"])
+    ):
+        # create prompts for each ordering of answers, we'll later average over them
+        full_text_1 = build_steamshp_prompt(
+            prompt, preferred, dispreferred, tokenizer, max_len
+        )
+        mask_1 = torch.cat(
+            (torch.ones(len(full_text_1)), torch.zeros(max_len - len(full_text_1)))
+        )
+        input_ids[2 * i, : len(full_text_1)] = full_text_1
+        attention_masks[2 * i, :] = mask_1
+
+        full_text_2 = build_steamshp_prompt(
+            prompt, dispreferred, preferred, tokenizer, max_len
+        )
+        mask_2 = torch.cat(
+            (torch.ones(len(full_text_2)), torch.zeros(max_len - len(full_text_2)))
+        )
+        input_ids[2 * i + 1, : len(full_text_2)] = full_text_2
+        attention_masks[2 * i + 1, :] = mask_2
+
+    return {"input_ids": input_ids, "attention_masks": attention_masks}
+
+
+def get_train_dataloaders(pretokenized=True, short_bsz=32, long_bsz=8, tokenizer=None):
     if pretokenized:
-        data_long_tokenized = load_dataset("andersonbcdefg/reward-modeling-long-tokenized", split="train")
-        data_short_tokenized = load_dataset("andersonbcdefg/reward-modeling-short-tokenized", split="train")
-        data_eval_tokenized = load_dataset("andersonbcdefg/reward-modeling-eval-tokenized", split="validation")
+        data_long_tokenized = load_dataset(
+            "andersonbcdefg/reward-modeling-long-tokenized", split="train"
+        )
+        data_short_tokenized = load_dataset(
+            "andersonbcdefg/reward-modeling-short-tokenized", split="train"
+        )
 
     else:
         train_dataset = get_train_dataset()
-        eval_dataset = get_eval_dataset()
         data_short = train_dataset["short"]
         data_long = train_dataset["long"]
 
-        data_long_tokenized = data_long.map(partial(tokenize_function, tokenizer=tokenizer, max_len=2048), 
-            batched=True, remove_columns=data_long.column_names)
-        data_short_tokenized = data_short.map(partial(tokenize_function, tokenizer=tokenizer, max_len=1024),
-            batched=True, remove_columns=data_short.column_names)
-        data_eval_tokenized = eval_dataset.map(partial(tokenize_function, tokenizer=tokenizer, max_len=2048),
-            batched=True, remove_columns=eval_dataset.column_names)
-        
-    short_dataloader = torch.utils.data.DataLoader(data_short_tokenized, batch_size=short_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
-    long_dataloader = torch.utils.data.DataLoader(data_long_tokenized, batch_size=long_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
-    eval_dataloader = torch.utils.data.DataLoader(data_eval_tokenized, batch_size=long_bsz, pin_memory=True, collate_fn=DefaultDataCollator(), num_workers=4)
-    return short_dataloader, long_dataloader, eval_dataloader
+        data_long_tokenized = data_long.map(
+            partial(tokenize_function, tokenizer=tokenizer, max_len=2048),
+            batched=True,
+            remove_columns=data_long.column_names,
+        )
+        data_short_tokenized = data_short.map(
+            partial(tokenize_function, tokenizer=tokenizer, max_len=1024),
+            batched=True,
+            remove_columns=data_short.column_names,
+        )
+
+    short_dataloader = torch.utils.data.DataLoader(
+        data_short_tokenized,
+        batch_size=short_bsz,
+        pin_memory=True,
+        collate_fn=DefaultDataCollator(),
+        num_workers=4,
+    )
+    long_dataloader = torch.utils.data.DataLoader(
+        data_long_tokenized,
+        batch_size=long_bsz,
+        pin_memory=True,
+        collate_fn=DefaultDataCollator(),
+        num_workers=4,
+    )
+
+    return short_dataloader, long_dataloader
+
+
+def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):
+    if steamshp:
+        tokenized = dataset.map(
+            partial(tokenize_fn_for_steamshp, tokenizer=tokenizer, max_len=max_len),
+            batched=True,
+            remove_columns=dataset.column_names,
+        )
+    else:
+        tokenized = dataset.map(
+            partial(tokenize_function, tokenizer=tokenizer, max_len=max_len),
+            batched=True,
+            remove_columns=dataset.column_names,
+        )
+    return torch.utils.data.DataLoader(
+        tokenized,
+        batch_size=bsz,
+        pin_memory=True,
+        collate_fn=DefaultDataCollator(),
+        num_workers=4,
+    )
+
+
+def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
+    eval_datasets = get_eval_datasets()
+    shp, hh, alpaca_gpt4, alpaca_human = (
+        eval_datasets["shp"],
+        eval_datasets["hh"],
+        eval_datasets["alpaca_gpt4"],
+        eval_datasets["alpaca_human"],
+    )
+    shp_loader, hh_loader, alpaca_gpt4_loader, alpaca_human_loader = map(
+        lambda x: to_eval_dataloader(x, tokenizer, bsz, max_len, steamshp=steamshp),
+        [shp, hh, alpaca_gpt4, alpaca_human],
+    )
+    return {
+        "shp": shp_loader,
+        "hh": hh_loader,
+        "alpaca_gpt4": alpaca_gpt4_loader,
+        "alpaca_human": alpaca_human_loader,
+    }

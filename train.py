@@ -37,6 +37,7 @@ def train(
     wandb_api_key=None,
     project_name="train_reward_model",
     model_name="sileod/deberta-v3-base-tasksource-nli",
+    gradient_checkpointing=False,
     freeze_layers=0,
     max_lr=3.0e-5,
     short_grad_clip=None,
@@ -54,6 +55,9 @@ def train(
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=1, ignore_mismatched_sizes=True
     )
+    if gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+
     if freeze_layers > 0:
         for n, p in model.named_parameters():
             if "embeddings" in n:
