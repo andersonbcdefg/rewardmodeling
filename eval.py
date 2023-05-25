@@ -16,14 +16,12 @@ def steamshp_eval_loop(model, dataloader, device):
     pass
 
 
-def eval_loop(model, eval_dataloader, n_batches, device):
+def eval_loop(model, loader, n_batches, device):
     model.to(device)
     model.eval()
     results = []
     with torch.no_grad():
-        for index, batch in enumerate(
-            tqdm(eval_dataloader, total=n_batches, desc="Evaluating...")
-        ):
+        for batch in tqdm(loader, total=n_batches, desc="Evaluating..."):
             input_ids, attn_mask = concat_batch(batch)
             pref_rewards, dispref_rewards = model(
                 input_ids.to(device), attention_mask=attn_mask.to(device)
