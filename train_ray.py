@@ -92,7 +92,7 @@ def train_loop_per_worker(config):
     # Iterate over epochs and batches
     for epoch in range(config.num_epochs):
         for index, batch in enumerate(dataset_shard.iter_torch_batches(
-            batch_size=32, dtypes=torch.float
+            batch_size=32, dtypes=torch.long
         )):
             input_ids, attn_mask = concat_batch(batch)
             with accelerator.accumulate(model):
