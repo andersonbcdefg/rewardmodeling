@@ -153,7 +153,7 @@ def main():
     
     config = Config(
         effective_batch_size=80,
-        microbatch_size=4,
+        microbatch_size=2,
         max_lr=3.0e-5,
         grad_clip=None,
         num_epochs=4,
