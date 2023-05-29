@@ -1,5 +1,7 @@
 # Train a DeBERTa reward model on just the Anthropic hh-rlhf dataset.
 import os
+import warnings
+warnings.simplefilter("ignore")
 from dataclasses import dataclass
 from functools import partial
 
