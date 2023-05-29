@@ -1,6 +1,6 @@
 # Train a DeBERTa reward model on just the Anthropic hh-rlhf dataset.
 import os
-from collections import namedtuple
+from dataclasses import dataclass
 from functools import partial
 
 import fire
@@ -41,7 +41,14 @@ def concat_batch(batch):
     )
     return input_ids, attn_mask
 
-Config = namedtuple("Config", ["effective_batch_size", "microbatch_size", "max_lr", "grad_clip", "num_epochs", "scheduler_steps"])
+@dataclass
+class Config: 
+    effective_batch_size: int =  80
+    microbatch_size: int = 8
+    max_lr: float = 3.0e-5
+    grad_clip: float = None
+    num_epochs: int = 4
+    scheduler_steps: int = None
 
 # Define your train worker loop
 # config needs: effective_batch_size, microbatch_size, max_lr, grad_clip, scheduler_steps, num_epochs
