@@ -43,8 +43,9 @@ def concat_batch(batch):
 
 @dataclass
 class Config: 
+    num_workers: int = 10
     effective_batch_size: int =  80
-    microbatch_size: int = 8
+    microbatch_size: int = 2
     max_lr: float = 3.0e-5
     grad_clip: float = None
     num_epochs: int = 4
@@ -57,7 +58,7 @@ def train_loop_per_worker(config):
     # Initialize the Accelerator
     accelerator = Accelerator(
         mixed_precision="fp16",
-        gradient_accumulation_steps=config.effective_batch_size // config.microbatch_size,
+        gradient_accumulation_steps=(config.effective_batch_size // config.microbatch_size) // config.num_workers,
     )
 
     # Fetch training set from the session
@@ -151,13 +152,18 @@ def main():
     num_samples = len(train_dataset)
     train_dataset = ray.data.from_huggingface(train_dataset)
     
+    NUM_EPOCHS = 4
+    NUM_WORKERS = 10
+    MICROBATCH_SIZE = 2
+    EFFECTIVE_BATCH_SIZE = 80
     config = Config(
-        effective_batch_size=80,
+        effective_batch_size=EFFECTIVE_BATCH_SIZE,
         microbatch_size=2,
         max_lr=3.0e-5,
         grad_clip=None,
-        num_epochs=4,
-        scheduler_steps = 4 * (num_samples // (8 * 10) + 1)
+        num_epochs=NUM_EPOCHS,
+        scheduler_steps = NUM_EPOCHS * num_samples // NUM_WORKERS // MICROBATCH_SIZE, # i think this is right?
+        num_workers=NUM_WORKERS,
     ) 
 
     
