@@ -56,7 +56,7 @@ class Config:
 # Define your train worker loop
 # config needs: effective_batch_size, microbatch_size, max_lr, grad_clip, scheduler_steps, num_epochs
 def train_loop_per_worker(config):
-
+    warnings.simplefilter("ignore")
     # Initialize the Accelerator
     accelerator = Accelerator(
         mixed_precision="fp16",
@@ -126,6 +126,7 @@ def train_loop_per_worker(config):
                     })
 
 def main():
+    warnings.simplefilter("ignore")
     # ray.init(
     #     runtime_env={
     #         "pip": [
