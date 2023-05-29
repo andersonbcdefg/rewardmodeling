@@ -42,13 +42,6 @@ def concat_batch(batch):
     return input_ids, attn_mask
 
 Config = namedtuple("Config", ["effective_batch_size", "microbatch_size", "max_lr", "grad_clip", "num_epochs"])
-config = Config(
-    effective_batch_size=64,
-    microbatch_size=16,
-    max_lr=3.0e-5,
-    grad_clip=None,
-    num_epochs=4,
-)
 
 # Define your train worker loop
 # config needs: effective_batch_size, microbatch_size, max_lr, grad_clip, scheduler_steps, num_epochs
@@ -105,61 +98,68 @@ def train_loop_per_worker(config):
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
-                # Log metrics
-                session.report({
+                # Log metrics, save every 5000 batches
+                if index % 5000 == 0:
+                    session.report({
                         "loss": micro_batch_loss.item(), 
                         "epoch": epoch,
                         "batch": index,
                     },
                     checkpoint=Checkpoint.from_dict(
-                        dict(epoch=epoch, model=accelerator.unwrap_model(model).state_dict(),
-                    )
-                ),
-        )
-        
-torch.manual_seed(42)
-tokenizer = AutoTokenizer.from_pretrained("sileod/deberta-v3-base-tasksource-nli")
-tokenize_partial = partial(tokenize_function, tokenizer=tokenizer, max_len=1024)
-train_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
-train_dataset = train_dataset.map(
-    process_anthropic, remove_columns=train_dataset.column_names
-# Remove any examples that will get excessively truncated
-).filter(
-    lambda example: len(example['prompt']) + len(example['preferred']) < 3200 and len(example['prompt']) + len(example['dispreferred']) < 3200
-)
-train_dataset = train_dataset.map(
-    tokenize_partial, batched=True, batch_size=1000, remove_columns=train_dataset.column_names
-)
-train_dataset = ray.data.from_huggingface(train_dataset)
+                        dict(epoch=epoch, model=accelerator.unwrap_model(model).state_dict())
+                    ))
+                else:
+                    session.report({
+                        "loss": micro_batch_loss.item(), 
+                        "epoch": epoch,
+                        "batch": index,
+                    })
+
+def main():
+    torch.manual_seed(42)
+    config = Config(
+        effective_batch_size=64,
+        microbatch_size=16,
+        max_lr=3.0e-5,
+        grad_clip=None,
+        num_epochs=4,
+    ) 
+
+    tokenizer = AutoTokenizer.from_pretrained("sileod/deberta-v3-base-tasksource-nli")
+    tokenize_partial = partial(tokenize_function, tokenizer=tokenizer, max_len=1024)
+    train_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
+    train_dataset = train_dataset.map(
+        process_anthropic, remove_columns=train_dataset.column_names
+    # Remove any examples that will get excessively truncated
+    ).filter(
+        lambda example: len(example['prompt']) + len(example['preferred']) < 3200 and len(example['prompt']) + len(example['dispreferred']) < 3200
+    )
+    train_dataset = train_dataset.map(
+        tokenize_partial, batched=True, batch_size=1000, remove_columns=train_dataset.column_names
+    )
+    train_dataset = ray.data.from_huggingface(train_dataset)
 
 
-# Define scaling and run configs
-scaling_config = ScalingConfig(
-    num_workers=10, 
-    use_gpu=True
-)
-run_config = RunConfig(checkpoint_config=CheckpointConfig(num_to_keep=1))
+    # Define scaling and run configs
+    scaling_config = ScalingConfig(
+        num_workers=10, 
+        use_gpu=True
+    )
+    run_config = RunConfig(checkpoint_config=CheckpointConfig(num_to_keep=1))
 
-trainer = AccelerateTrainer(
-    train_loop_per_worker=train_loop_per_worker,
-    accelerate_config={},
-    scaling_config=scaling_config,
-    run_config=run_config,
-    datasets={"train": train_dataset},
-)
+    trainer = AccelerateTrainer(
+        train_loop_per_worker=train_loop_per_worker,
+        train_loop_config=config,
+        accelerate_config={},
+        scaling_config=scaling_config,
+        run_config=run_config,
+        datasets={"train": train_dataset},
+    )
 
-result = trainer.fit()
+    result = trainer.fit()
+    best_checkpoint_loss = result.metrics["loss"]
+    print(f"Best checkpoint loss: {best_checkpoint_loss}")
 
-best_checkpoint_loss = result.metrics["loss"]
-
-    
-
-    
-
-
-  
-
-    
 
 if __name__ == "__main__":
-    fire.Fire(train)
+    fire.Fire(main)
