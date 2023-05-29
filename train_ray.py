@@ -141,6 +141,7 @@ def main():
     train_dataset = train_dataset.map(
         tokenize_partial, batched=True, batch_size=1000, remove_columns=train_dataset.column_names
     )
+    num_samples = len(train_dataset)
     train_dataset = ray.data.from_huggingface(train_dataset)
     
     config = Config(
@@ -149,7 +150,7 @@ def main():
         max_lr=3.0e-5,
         grad_clip=None,
         num_epochs=4,
-        scheduler_steps = 4 * (len(train_dataset) // (8 * 10) + 1)
+        scheduler_steps = 4 * (num_samples // (8 * 10) + 1)
     ) 
 
     
