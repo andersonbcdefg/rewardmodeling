@@ -56,7 +56,7 @@ def train_loop_per_worker(config):
 
     # Initialize the Accelerator
     accelerator = Accelerator(
-        mixed_precision="bf16",
+        mixed_precision="fp16",
         gradient_accumulation_steps=config.effective_batch_size // config.microbatch_size,
     )
 
