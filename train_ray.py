@@ -1,6 +1,7 @@
 # Train a DeBERTa reward model on just the Anthropic hh-rlhf dataset.
 import os
 from collections import namedtuple
+from functools import partial
 
 import fire
 import ray
@@ -10,9 +11,9 @@ from accelerate import Accelerator
 from ray.air import Checkpoint, session
 from ray.air.config import CheckpointConfig, RunConfig, ScalingConfig
 from ray.train.huggingface.accelerate import AccelerateTrainer
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from data import process_anthropic
+from data import process_anthropic, tokenize_function
 
 
 # Calculate loss on rewards (first half should be preferred, second half should be dispreferred)
@@ -117,11 +118,20 @@ def train_loop_per_worker(config):
         )
         
 torch.manual_seed(42)
-
+tokenizer = AutoTokenizer.from_pretrained("sileod/deberta-v3-base-tasksource-nli")
+tokenize_partial = partial(tokenize_function, tokenizer=tokenizer, max_len=1024)
 train_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
 train_dataset = train_dataset.map(
-    process_anthropic, remove_columns=hh_dataset.column_names
+    process_anthropic, remove_columns=train_dataset.column_names
+# Remove any examples that will get excessively truncated
+).filter(
+    lambda example: len(example['prompt']) + len(example['preferred']) < 3200 and len(example['prompt']) + len(example['dispreferred']) < 3200
 )
+train_dataset = train_dataset.map(
+    tokenize_partial, batched=True, batch_size=1000, remove_columns=train_dataset.column_names
+)
+train_dataset = ray.data.from_huggingface(train_dataset)
+
 
 # Define scaling and run configs
 scaling_config = ScalingConfig(
@@ -132,9 +142,6 @@ run_config = RunConfig(checkpoint_config=CheckpointConfig(num_to_keep=1))
 
 trainer = AccelerateTrainer(
     train_loop_per_worker=train_loop_per_worker,
-    # Instead of using a dict, you can run ``accelerate config``.
-    # The default value of None will then load that configuration
-    # file.
     accelerate_config={},
     scaling_config=scaling_config,
     run_config=run_config,
