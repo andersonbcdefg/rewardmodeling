@@ -116,6 +116,18 @@ def train_loop_per_worker(config):
                     })
 
 def main():
+    ray.init(
+        runtime_env={
+            "pip": [
+                "datasets",
+                "accelerate>=0.16.0",
+                "transformers>=4.26.0",
+                "torch>=1.12.0",
+                "wandb==0.13.10"
+            ]
+        }
+    )
+
     torch.manual_seed(42)
     config = Config(
         effective_batch_size=64,
