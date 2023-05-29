@@ -85,7 +85,7 @@ def train_loop_per_worker(config):
         "anneal_strategy": "linear",
         "three_phase": False,
     }
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(**scheduler_kwargs)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_kwargs)
     
     model, optimizer, scheduler = accelerator.prepare(model, optimizer, scheduler)
 
