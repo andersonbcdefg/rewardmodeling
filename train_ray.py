@@ -87,7 +87,7 @@ def train_loop_per_worker(config):
         for index, batch in enumerate(dataset_shard.iter_torch_batches(
             batch_size=32, dtypes=torch.float
         )):
-            input_ids, attn_mask = concat_batch(batch):
+            input_ids, attn_mask = concat_batch(batch)
             with accelerator.accumulate(model):
                 rewards = model(input_ids, attention_mask=attn_mask).logits
                 micro_batch_loss = loss_fn(rewards)
