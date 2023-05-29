@@ -41,7 +41,7 @@ def concat_batch(batch):
     )
     return input_ids, attn_mask
 
-Config = namedtuple("Config", ["effective_batch_size", "microbatch_size", "max_lr", "grad_clip", "num_epochs"])
+Config = namedtuple("Config", ["effective_batch_size", "microbatch_size", "max_lr", "grad_clip", "num_epochs", "scheduler_steps"])
 
 # Define your train worker loop
 # config needs: effective_batch_size, microbatch_size, max_lr, grad_clip, scheduler_steps, num_epochs
@@ -116,27 +116,19 @@ def train_loop_per_worker(config):
                     })
 
 def main():
-    ray.init(
-        runtime_env={
-            "pip": [
-                "datasets",
-                "accelerate>=0.16.0",
-                "transformers>=4.26.0",
-                "torch>=1.12.0",
-                "wandb==0.13.10"
-            ]
-        }
-    )
+    # ray.init(
+    #     runtime_env={
+    #         "pip": [
+    #             "datasets",
+    #             "accelerate>=0.16.0",
+    #             "transformers>=4.26.0",
+    #             "torch>=1.12.0",
+    #             "wandb==0.13.10"
+    #         ]
+    #     }
+    # )
 
     torch.manual_seed(42)
-    config = Config(
-        effective_batch_size=64,
-        microbatch_size=16,
-        max_lr=3.0e-5,
-        grad_clip=None,
-        num_epochs=4,
-    ) 
-
     tokenizer = AutoTokenizer.from_pretrained("sileod/deberta-v3-base-tasksource-nli")
     tokenize_partial = partial(tokenize_function, tokenizer=tokenizer, max_len=1024)
     train_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
@@ -150,6 +142,17 @@ def main():
         tokenize_partial, batched=True, batch_size=1000, remove_columns=train_dataset.column_names
     )
     train_dataset = ray.data.from_huggingface(train_dataset)
+    
+    config = Config(
+        effective_batch_size=80,
+        microbatch_size=8,
+        max_lr=3.0e-5,
+        grad_clip=None,
+        num_epochs=4,
+        scheduler_steps = 4 * (len(train_dataset) // (8 * 10) + 1)
+    ) 
+
+    
 
 
     # Define scaling and run configs
