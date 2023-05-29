@@ -15,7 +15,7 @@ def read_jsonl(file_path):
     return data
 
 def write_to_file(result):
-    with open("ranked_responses3.jsonl", "a") as f:
+    with open("gpteacher_rankings.jsonl", "a") as f:
         f.write(result)
 
 def get_completion(query, response_a, response_b):
@@ -73,47 +73,25 @@ if __name__ == '__main__':
     df = load_dataset("teknium/GPTeacher-General-Instruct", split="train").filter(
         lambda example: example['input'] == ""
     ).to_pandas()
-    df.columns = ['prompt', 'input', 'response']
+    df.columns = ['prompt', 'input', 'gpt4_response']
+    # deduplicate by prompt
+    df = df.drop_duplicates(subset=['prompt'])
 
-    # read in davinci-003 responses
+    # read in davinci-003 responses and deduplicate by prompt
     alternative_responses = pd.DataFrame.from_records(read_jsonl("gpteacher_responses.jsonl"))
-
+    alternative_responses.columns = ['prompt', 'davinci_response']
+    alternative_responses = alternative_responses.drop_duplicates(subset=['prompt'])
+    print("before merge", len(df), len(alternative_responses))
+    
     # merge the two DataFrames
-    df = pd.merge(df, alternative_responses, on='prompt', how='left')
-
-    print(df.head(), df.columns)
-    sys.exit(0)
-
-
-    sys.exit(0)
-
-    combined_df = None
-    for i in range(1, 7):
-        results = read_jsonl(base_dir + f'results{i}.jsonl')
-        df = pd.DataFrame.from_records(results)
-        if combined_df is None:
-            combined_df = df
-        else:
-            combined_df = pd.concat([combined_df, df])
-
-    print(len(combined_df))
-    grouped_df = combined_df.groupby('prompt')['response'].agg(list).reset_index()
-    grouped_df.columns = ['prompt', 'responses']
-
-    # Convert the grouped DataFrame into a dictionary
-    prompt_responses_dict = grouped_df.set_index('prompt')['responses'].to_dict()
+    df = pd.merge(df, alternative_responses, on='prompt', how='inner')
 
     # Rank two responses for each prompt
     results = []
-    pool = Pool(8)
+    pool = Pool(16)
 
-
-
-    for query, responses in tqdm.tqdm(list(prompt_responses_dict.items())[6800:]):
-        responses = list(set(responses))
-        responses = [r.split("###")[0].strip() for r in responses]
-        response_a = sorted(responses, key=lambda x: len(x))[-1]
-        response_b = sorted(responses, key=lambda x: len(x))[-2]
+    # zip prompts and responses together for iteration
+    for query, response_a, response_b in tqdm.tqdm(zip(df.prompt, df.gpt4_response, df.davinci_response)):
         pool.apply_async(get_completion, args=(query, response_a, response_b), callback=write_to_file)
         time.sleep(0.1)
 

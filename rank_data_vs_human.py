@@ -17,7 +17,7 @@ def read_jsonl(file_path):
     return data
 
 def write_to_file(result):
-    with open("ai_vs_human.jsonl", "a") as f:
+    with open("dolly_ai_vs_human.jsonl", "a") as f:
         f.write(result)
 
 def get_completion(query, response_a, response_b):
@@ -82,7 +82,10 @@ if __name__ == '__main__':
         axis=1
     )
     preferred_ai_responses = preferred_ai_responses[preferred_ai_responses['preference_clean'] != "Neither"]
-    
+    preferred_ai_responses['preferred_text'] = preferred_ai_responses.apply(
+        lambda row: row['response_a'] if row['preference_clean'] == "A" else row['response_b'],
+        axis=1
+    )
     # remove ones with blank responses
     preferred_ai_responses = preferred_ai_responses[preferred_ai_responses['response_a'] != ""]
     preferred_ai_responses = preferred_ai_responses[preferred_ai_responses['response_b'] != ""]
@@ -97,29 +100,14 @@ if __name__ == '__main__':
 
     # Join with the original dolly responses
     combined = preferred_ai_responses.merge(original_dolly, on='prompt', how='left')
-    print(combined.columns)
-    sys.exit(0)
-    # Group ai responses by prompt and keep only one record per prompt
-    deduped = preferred_ai_responses
-    # deduped['preferred_response'] = 
+    print(combined.head()[['prompt', 'preferred_text', 'human_response']])
 
-    # Join with dolly human-written responses
-
-
-    # Convert the grouped DataFrame into a dictionary
-    prompt_responses_dict = grouped_df.set_index('prompt')['responses'].to_dict()
-
-    # Rank two responses for each prompt
+    # Rank preferred AI responses vs. Dolly for each prompt. Dolly is always response A.
     results = []
-    pool = Pool(8)
+    pool = Pool(12)
 
-
-
-    for query, responses in tqdm.tqdm(list(prompt_responses_dict.items())[6800:]):
-        responses = list(set(responses))
-        responses = [r.split("###")[0].strip() for r in responses]
-        response_a = sorted(responses, key=lambda x: len(x))[-1]
-        response_b = sorted(responses, key=lambda x: len(x))[-2]
+    # zip the prompts, human response, and preferred AI response
+    for query, response_a, response_b in list(zip(combined['prompt'], combined['human_response'], combined['preferred_text']))[10000:]:
         pool.apply_async(get_completion, args=(query, response_a, response_b), callback=write_to_file)
         time.sleep(0.1)
 
