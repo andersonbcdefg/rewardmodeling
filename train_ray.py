@@ -1,4 +1,26 @@
-# Train a DeBERTa reward model on just the Anthropic hh-rlhf dataset.
+## Use Ray to train a DeBERTa reward model on just the Anthropic hh-rlhf dataset.
+"""
+THOUGHTS:
+If I was going to do this again, I'm not sure I would use Accelerate and Ray. It sort of feels like they
+are trying to solve a similar problem, and as a result get in each other's way. For example, both of them are
+trying to handle accumulating/syncing gradients, which leads to unintuitive effective batch size of
+workers * microbatch_size * accum_steps. The main point of Accelerate is making multi-GPU training mindless,
+and that's also what Ray is for. The other goodies that come with Accelerate, like mixed-precision, are pretty
+easy to do on your own anyway. Ray also handles checkpointing, so you don't need Accelerate for that.
+
+CONVENIENT/EASY THINGS:
+- Really easy to turn HuggingFace dataset into Ray Dataset with zero thinking.
+
+OTHER PAIN POINTS:
+- Getting environment set up on cluster. Easy to shoot yourself in the foot with package versions.
+  Not easy to specify because ray.init comes after "import" in the script so if your packages are
+  broken then you can't fix it with 'runtime_env'.
+- Logging/observability was sort of a black box for me. I assumed if I use the session.report, then
+  that would be visible somewhere, but there wasn't anywhere for me to see a chart of the loss that
+  as far as I could tell. I'd want to use wandb, but wandb acts kind of weird in distributed training also.
+"""
+
+# 
 import os
 import warnings
 warnings.simplefilter("ignore")
