@@ -39,7 +39,7 @@ def train(
     project_name="train_reward_model",
     group_name="DDP",
     model_name="sileod/deberta-v3-base-tasksource-nli",
-    tokenizer_name="micrsosoft/deberta-v3-base",
+    tokenizer_name="microsoft/deberta-v3-base",
     datasets="all",
     seq_len=1024,
     gradient_checkpointing=False,
