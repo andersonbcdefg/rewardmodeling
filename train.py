@@ -3,7 +3,7 @@ import fire
 import torch
 from accelerate import Accelerator
 from data import get_train_dataloader
-from eval import eval_loop
+# from eval import eval_loop
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import wandb
 
