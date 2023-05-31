@@ -48,13 +48,16 @@ def evaluate(
         tokenizer = AutoTokenizer.from_pretrained("stanfordnlp/SteamSHP-flan-t5-large")
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
+    else:
+        raise ValueError("Model name not recognized")
+
     if ckpt_path is not None:
         model.load_state_dict(torch.load(ckpt_path))
     model.gradient_checkpointing_enable()
 
     # Get eval dataloaders
     dataloaders = get_eval_dataloaders(
-        tokenizer, bsz, max_len, steamshp="SteamSHP" in model_name
+        tokenizer, bsz, max_len, steamshp=("SteamSHP" in model_name)
     )
 
     # Subsample for efficiency & evaluate!

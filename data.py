@@ -3,7 +3,7 @@ from functools import partial
 from itertools import chain
 import torch
 # import matplotlib.pyplot as plt
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, interleave_datasets
 from transformers import DefaultDataCollator
 
 
@@ -104,84 +104,143 @@ def process_alpaca(example):
         dispreferred = example["output_1"]
     return {"prompt": prompt, "preferred": preferred, "dispreferred": dispreferred}
 
+def process_synthetic(example):
+    return {
+        "prompt": example["prompt"],
+        "preferred": example['response_a'] if example['preferred'] == "A" else example['response_b'],
+        "dispreferred": example['response_b'] if example['preferred'] == "A" else example['response_a']
+    }
 
-def get_train_dataset():
+def get_train_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in_tokens=None, tokenizer=None):
+    if tokenizer is None:
+        if min_length_in_tokens is not None or max_length_in_tokens is not None:
+            raise ValueError("Cannot specify min_length_in_tokens or max_length_in_tokens without specifying tokenizer.")
+    
+    if datasets == "all":
+        datasets = ["hh", "shp", "webgpt", "summarize", "synth_gptj", "synth_dolly", "synth_redteam", "synth_gpteacher"]
+
+    result = {}
     # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
-    shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
-    shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
+    if "hh" in datasets:
+        hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
+        hh_dataset = hh_dataset.map(
+            process_anthropic, remove_columns=hh_dataset.column_names
+        )
+        result["hh"] = hh_dataset
 
-    hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
-    hh_dataset = hh_dataset.map(
-        process_anthropic, remove_columns=hh_dataset.column_names
-    )
+    if "shp" in datasets:
+        shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
+        shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
+        result["shp"] = shp_dataset
 
-    webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train")
-    webgpt_dataset = webgpt_dataset.map(
-        process_webgpt, remove_columns=webgpt_dataset.column_names
-    ).filter(
-        lambda example: example["preferred"] != "" and example["dispreferred"] != ""
-    )
+    if "webgpt" in datasets:
+        webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train")
+        webgpt_dataset = webgpt_dataset.map(
+            process_webgpt, remove_columns=webgpt_dataset.column_names
+        ).filter(
+            lambda example: example["preferred"] != "" and example["dispreferred"] != ""
+        )
+        result["webgpt"] = webgpt_dataset
 
-    # total_samples = len(shp_dataset) + len(hh_dataset) + len(webgpt_dataset)
+    if "summarize" in datasets:
+        pass
 
-    combined = (
-        concatenate_datasets([shp_dataset, hh_dataset, webgpt_dataset])
-        .shuffle(seed=42)
-        .flatten_indices()
-    )
-    combined = combined.map(
-        lambda example: {
-            "length": len(example["prompt"])
-            + len(example["preferred"])
-            + len(example["dispreferred"]),
-        }
-    ).filter(
-        lambda example: example["length"]
-        < 10000  # characters, not tokens. 10000ch ~= 2500 tokens
-    )
+    if "synth_gptj" in datasets:
+        synth_gptj_dataset = load_dataset('Dahoas/synthetic-instruct-gptj-pairwise', split='train')
+        synth_gptj_dataset = synth_gptj_dataset.map(
+            lambda example: {
+                "prompt": example["prompt"],
+                "preferred": example["chosen"],
+                "dispreferred": example["rejected"],
+            },
+            remove_columns=synth_gptj_dataset.column_names
+        )
+        result["synth_gptj"] = synth_gptj_dataset
 
-    median = sorted(combined["length"])[len(combined) // 2]
-    print("median length:", median)
+    if "synth_dolly" in datasets:
+        synth_dolly_dataset = load_dataset("andersonbcdefg/dolly_reward_modeling_pairwise", split="train")
+        synth_dolly_dataset = synth_dolly_dataset.map(process_synthetic, remove_columns=synth_dolly_dataset.column_names)
+        result["synth_dolly"] = synth_dolly_dataset
 
-    # this splits the dataset into two parts: long and short. we save computation on the short examples by not wasting padding.
-    long = combined.filter(lambda example: example["length"] > 1250)
-    short = combined.filter(lambda example: example["length"] <= 1250)
+    if "synth_redteam" in datasets:
+        pass
 
-    return {
-        "long": long,
-        "short": short,
-    }
+    if "synth_gpteacher" in datasets:
+        pass
+
+    # filter all datasets for length
+    if min_length_in_tokens is not None or max_length_in_tokens is not None:
+        for key in result.keys():
+            result[key] = result[key].map(
+                lambda example: {"length": len(tokenizer(example['prompt']).input_ids) + \
+                                max(len(tokenizer(example['preferred']).input_ids), 
+                                    len(tokenizer(example['dispreferred']).input_ids))},
+            )
+            if min_length_in_tokens is not None:
+                result[key] = result[key].filter(lambda example: example['length'] >= min_length_in_tokens)
+            if max_length_in_tokens is not None:
+                result[key] = result[key].filter(lambda example: example['length'] <= max_length_in_tokens)
+    
+    for key, dataset in result.items():
+        print(f"Dataset {key} has {len(dataset)} examples.")
+    return result
 
 
-def get_eval_datasets():
-    shp_dataset = load_dataset("stanfordnlp/SHP", split="validation")
-    shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
+def get_eval_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in_tokens=None, tokenizer=None):
+    if tokenizer is None:
+        if min_length_in_tokens is not None or max_length_in_tokens is not None:
+            raise ValueError("Cannot specify min_length_in_tokens or max_length_in_tokens when specifying tokenizer.")
+        
+    if datasets == "all":
+        datasets = ["hh", "shp", "alpaca_gpt4", "alpaca_human"]
 
-    hh_dataset = load_dataset("Anthropic/hh-rlhf", split="test")
-    hh_dataset = hh_dataset.map(
-        process_anthropic, remove_columns=hh_dataset.column_names
-    )
+    result = {}
+    
+    if "hh" in datasets:
+        hh_dataset = load_dataset("Anthropic/hh-rlhf", split="test")
+        hh_dataset = hh_dataset.map(
+            process_anthropic, remove_columns=hh_dataset.column_names
+        )
+        result["hh"] = hh_dataset
 
-    alpaca_gpt4_dataset = load_dataset(
-        "tatsu-lab/alpaca_farm", "alpaca_gpt4_preference", split="preference"
-    )
-    alpaca_gpt4_dataset = alpaca_gpt4_dataset.map(
-        process_alpaca, remove_columns=alpaca_gpt4_dataset.column_names
-    )
+    if "shp" in datasets:
+        shp_dataset = load_dataset("stanfordnlp/SHP", split="validation")
+        shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
+        result["shp"] = shp_dataset
+    
+    if "alpaca_gpt4" in datasets:
+        alpaca_gpt4_dataset = load_dataset(
+            "tatsu-lab/alpaca_farm", "alpaca_gpt4_preference", split="preference"
+        )
+        alpaca_gpt4_dataset = alpaca_gpt4_dataset.map(
+            process_alpaca, remove_columns=alpaca_gpt4_dataset.column_names
+        )
+        result["alpaca_gpt4"] = alpaca_gpt4_dataset
 
-    alpaca_human_dataset = load_dataset(
-        "tatsu-lab/alpaca_farm", "alpaca_human_preference", split="preference"
-    )
-    alpaca_human_dataset = alpaca_human_dataset.map(
-        process_alpaca, remove_columns=alpaca_human_dataset.column_names
-    )
+    if "alpaca_human" in datasets:
+        alpaca_human_dataset = load_dataset(
+            "tatsu-lab/alpaca_farm", "alpaca_human_preference", split="preference"
+        )
+        alpaca_human_dataset = alpaca_human_dataset.map(
+            process_alpaca, remove_columns=alpaca_human_dataset.column_names
+        )
+        result["alpaca_human"] = alpaca_human_dataset
 
-    return {
-        "shp": shp_dataset,
-        "hh": hh_dataset,
-        "alpaca_gpt4": alpaca_gpt4_dataset,
-        "alpaca_human": alpaca_human_dataset,
-    }
+    if min_length_in_tokens is not None or max_length_in_tokens is not None:
+        for key in result.keys():
+            result[key] = result[key].map(
+                lambda example: {"length": len(tokenizer(example['prompt']).input_ids) + \
+                                max(len(tokenizer(example['preferred']).input_ids), 
+                                    len(tokenizer(example['dispreferred']).input_ids))},
+            )
+            if min_length_in_tokens is not None:
+                result[key] = result[key].filter(lambda example: example['length'] >= min_length_in_tokens)
+            if max_length_in_tokens is not None:
+                result[key] = result[key].filter(lambda example: example['length'] <= max_length_in_tokens)
+    
+    for key, dataset in result.items():
+        print(f"Dataset {key} has {len(dataset)} examples.")
+    return result
 
 
 def tokenize_function(examples, tokenizer, max_len, use_special_tokens=True):
@@ -302,47 +361,37 @@ def tokenize_fn_for_steamshp(examples, tokenizer, max_len=512):
     return {"input_ids": input_ids, "attention_masks": attention_masks}
 
 
-def get_train_dataloaders(pretokenized=True, short_bsz=32, long_bsz=8, tokenizer=None):
-    if pretokenized:
-        data_long_tokenized = load_dataset(
-            "andersonbcdefg/reward-modeling-long-tokenized", split="train"
-        )
-        data_short_tokenized = load_dataset(
-            "andersonbcdefg/reward-modeling-short-tokenized", split="train"
-        )
+def get_train_dataloader(
+        datasets, 
+        batch_size, 
+        tokenizer,
+        filter_min_length_in_tokens=None,
+        filter_max_length_in_tokens=None,
+        seq_len=1024
+):
+    if tokenizer is None:
+        raise ValueError("Must specify tokenizer.")
 
-    else:
-        train_dataset = get_train_dataset()
-        data_short = train_dataset["short"]
-        data_long = train_dataset["long"]
+    datasets = get_train_datasets(datasets, filter_min_length_in_tokens, filter_max_length_in_tokens, tokenizer)
+    lengths = [len(dataset) for dataset in datasets.values()]
+    probabilities = [length / sum(lengths) for length in lengths]
+    interleaved =  interleave_datasets(datasets.values(), probabilities=probabilities, seed=42)
+    tokenized = interleaved.map(
+        partial(tokenize_function, tokenizer=tokenizer, max_len=seq_len),
+        batched=True,
+        batch_size=1000,
+        remove_columns=interleaved.column_names,
+    )
 
-        data_long_tokenized = data_long.map(
-            partial(tokenize_function, tokenizer=tokenizer, max_len=2048),
-            batched=True,
-            remove_columns=data_long.column_names,
-        )
-        data_short_tokenized = data_short.map(
-            partial(tokenize_function, tokenizer=tokenizer, max_len=1024),
-            batched=True,
-            remove_columns=data_short.column_names,
-        )
-
-    short_dataloader = torch.utils.data.DataLoader(
-        data_short_tokenized,
-        batch_size=short_bsz,
+    dataloader = torch.utils.data.DataLoader(
+        tokenized,
+        batch_size=batch_size,
         pin_memory=True,
         collate_fn=DefaultDataCollator(),
         num_workers=4,
     )
-    long_dataloader = torch.utils.data.DataLoader(
-        data_long_tokenized,
-        batch_size=long_bsz,
-        pin_memory=True,
-        collate_fn=DefaultDataCollator(),
-        num_workers=4,
-    )
-
-    return short_dataloader, long_dataloader
+    
+    return dataloader
 
 
 def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):

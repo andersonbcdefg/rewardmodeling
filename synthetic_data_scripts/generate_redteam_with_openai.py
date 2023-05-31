@@ -27,7 +27,7 @@ def read_jsonl(file_path):
 def write_to_file(line, file_path):
     with open(file_path, "a") as f:
         f.write(line)
-cb = partial(write_to_file, file_path="redteaming_davinci_responses.jsonl")
+cb = partial(write_to_file, file_path="synthetic_data/redteaming_davinci_responses.jsonl")
 
 def get_completion_chat(query):
     # Get completion from GPT-3.5
@@ -73,11 +73,11 @@ if __name__ == '__main__':
         lambda transcript: transcript.split("Assistant:")[0].replace("Human:", "").strip()
     ).to_list()
 
-    pool = Pool(32)
+    pool = Pool(64)
 
     
-    for prompt in tqdm.tqdm(red_teaming_prompts):
-        pool.apply_async(get_completion_text, args=(prompt,), callback=cb)
+    for prompt in tqdm.tqdm(list(set(red_teaming_prompts))[8000:]):
+        pool.apply_async(get_completion_chat, args=(prompt,), callback=cb)
         # result = get_completion_text(prompt)
         # cb(result)
         time.sleep(0.1)
