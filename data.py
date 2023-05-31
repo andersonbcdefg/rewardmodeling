@@ -375,7 +375,7 @@ def get_train_dataloader(
     datasets = get_train_datasets(datasets, filter_min_length_in_tokens, filter_max_length_in_tokens, tokenizer)
     lengths = [len(dataset) for dataset in datasets.values()]
     probabilities = [length / sum(lengths) for length in lengths]
-    interleaved =  interleave_datasets(datasets.values(), probabilities=probabilities, seed=42)
+    interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
     tokenized = interleaved.map(
         partial(tokenize_function, tokenizer=tokenizer, max_len=seq_len),
         batched=True,
