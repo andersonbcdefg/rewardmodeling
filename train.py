@@ -3,6 +3,7 @@ import fire
 import torch
 from accelerate import Accelerator
 from data import get_train_dataloader
+from eval import eval_loop
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import wandb
 
@@ -122,28 +123,34 @@ def train(
     if accelerator.is_main_process:
         print("Training begins!")
     total_tokens = 0
-    for index, batch in enumerate(dataloader):
-        input_ids, attn_mask = concat_batch(batch)
-        total_tokens += input_ids.numel()
-        with accelerator.accumulate(model):
-            rewards = model(input_ids, attention_mask=attn_mask).logits
-            micro_batch_loss = loss_fn(rewards)
-            wandb.log(
-                {
-                    "micro_batch_loss": micro_batch_loss.item(),
-                    "lr": scheduler.get_last_lr()[0],
-                    "tokens": total_tokens,
-                }
-            )
-            accelerator.backward(micro_batch_loss)
-            if grad_clip is not None:
-                accelerator.clip_grad_norm_(model.parameters(), grad_clip)
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad(set_to_none=True)
-        if index % save_every == 0:
-            accelerator.wait_for_everyone()
-            accelerator.save_state(output_dir="checkpoints")
+    for epoch in range(num_epochs):
+        for index, batch in enumerate(dataloader):
+            input_ids, attn_mask = concat_batch(batch)
+            total_tokens += input_ids.numel()
+            with accelerator.accumulate(model):
+                rewards = model(input_ids, attention_mask=attn_mask).logits
+                micro_batch_loss = loss_fn(rewards)
+                wandb.log(
+                    {
+                        "micro_batch_loss": micro_batch_loss.item(),
+                        "lr": scheduler.get_last_lr()[0],
+                        "tokens": total_tokens,
+                    }
+                )
+                accelerator.backward(micro_batch_loss)
+                if grad_clip is not None:
+                    accelerator.clip_grad_norm_(model.parameters(), grad_clip)
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+                
+        
+        # Evaluate & save model at the end of each epoch
+        print("Evaluating model... just kidding!")
+
+        accelerator.wait_for_everyone()
+        accelerator.save_state(output_dir="checkpoints")
+        
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
