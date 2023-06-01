@@ -69,7 +69,7 @@ def train(
             filter_max_length_in_tokens=None,
             seq_len=seq_len
         )
-        
+
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
@@ -87,6 +87,7 @@ def train(
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=max_lr, betas=(0.9, 0.95) # , fused=True (doesn't work in torch < 2.0.0)
     )
+
     # constant learning rate
     scheduler_kwargs = {
         "max_lr": max_lr,
@@ -106,7 +107,7 @@ def train(
         dataloader, model, optimizer
     )
 
-    if accelerator.is_main_process:
+    with accelerator.main_process_first():
         if wandb_api_key is not None:
             wandb.login(key=wandb_api_key)
         else:
@@ -119,6 +120,7 @@ def train(
             # "model": model.config.__dict__,
             "freeze_layers": freeze_layers,
             "scheduler": scheduler_kwargs,
+            "datasets": datasets,
         },
     )
 

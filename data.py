@@ -163,7 +163,9 @@ def get_train_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in
         result["synth_dolly"] = synth_dolly_dataset
 
     if "synth_redteam" in datasets:
-        pass
+        synth_redteam_dataset = load_dataset("andersonbcdefg/red_teaming_reward_modeling_pairwise_no_as_an_ai", split="train")
+        synth_redteam_dataset = synth_redteam_dataset.map(process_synthetic, remove_columns=synth_redteam_dataset.column_names)
+        result["synth_redteam"] = synth_redteam_dataset
 
     if "synth_gpteacher" in datasets:
         pass
