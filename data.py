@@ -375,7 +375,9 @@ def get_train_dataloader(
     datasets = get_train_datasets(datasets, filter_min_length_in_tokens, filter_max_length_in_tokens, tokenizer)
     lengths = [len(dataset) for dataset in datasets.values()]
     probabilities = [length / sum(lengths) for length in lengths]
+    print("Interleaving datasets (this may take a while)...")
     interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
+    print("Tokenizing...")
     tokenized = interleaved.map(
         partial(tokenize_function, tokenizer=tokenizer, max_len=seq_len),
         batched=True,
@@ -417,7 +419,7 @@ def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):
 
 
 def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
-    eval_datasets = get_eval_datasets()
+    eval_datasets = get_eval_datasets(datasets="all", tokenizer=tokenizer, max_length_in_tokens=1024)
     shp, hh, alpaca_gpt4, alpaca_human = (
         eval_datasets["shp"],
         eval_datasets["hh"],
