@@ -22,6 +22,7 @@ def extract_preference(preference):
 def remove_as_an_ai(response):
     response = re.sub(r"as an AI language model, I", "I", response)
     response = re.sub(r"As an AI language model, I", "I", response)
+    return response
 
 
 if __name__ == '__main__':

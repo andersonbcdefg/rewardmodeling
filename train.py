@@ -107,22 +107,21 @@ def train(
         dataloader, model, optimizer
     )
 
-    with accelerator.main_process_first():
+    if accelerator.is_main_process:
         if wandb_api_key is not None:
             wandb.login(key=wandb_api_key)
         else:
             wandb.login()
-    wandb.init(
-        project=project_name,
-        group=group_name,
-        config={
-            "model_name": model_name,
-            # "model": model.config.__dict__,
-            "freeze_layers": freeze_layers,
-            "scheduler": scheduler_kwargs,
-            "datasets": datasets,
-        },
-    )
+        wandb.init(
+            project=project_name,
+            config={
+                "model_name": model_name,
+                # "model": model.config.__dict__,
+                "freeze_layers": freeze_layers,
+                "scheduler": scheduler_kwargs,
+                "datasets": datasets,
+            },
+        )
 
     model.train()
     if accelerator.is_main_process:
@@ -135,13 +134,14 @@ def train(
             with accelerator.accumulate(model):
                 rewards = model(input_ids, attention_mask=attn_mask).logits
                 micro_batch_loss = loss_fn(rewards)
-                wandb.log(
-                    {
-                        "micro_batch_loss": micro_batch_loss.item(),
-                        "lr": scheduler.get_last_lr()[0],
-                        "tokens": total_tokens,
-                    }
-                )
+                if accelerator.is_main_process:
+                    wandb.log(
+                        {
+                            "micro_batch_loss": micro_batch_loss.item(),
+                            "lr": scheduler.get_last_lr()[0],
+                            "tokens": total_tokens,
+                        }
+                    )
                 accelerator.backward(micro_batch_loss)
                 if grad_clip is not None:
                     accelerator.clip_grad_norm_(model.parameters(), grad_clip)

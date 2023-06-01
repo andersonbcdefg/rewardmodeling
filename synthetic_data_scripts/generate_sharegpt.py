@@ -45,14 +45,14 @@ if __name__ == '__main__':
     ).to_list()
 
     pool = Pool(48)
-    for prompt in tqdm.tqdm(list(set(share_gpt_prompts))):
+    for prompt in tqdm.tqdm(list(set(share_gpt_prompts))[34000:]):
         prompt = prompt.strip()
         if prompt.endswith("Share Prompt"):
             prompt = prompt[:-len("Share Prompt")]
         pool.apply_async(get_completion_text, args=(prompt,), callback=cb)
         # result = get_completion_text(prompt)
         # cb(result)
-        time.sleep(0.05)
+        time.sleep(0.2)
     
     pool.close()
     pool.join()
