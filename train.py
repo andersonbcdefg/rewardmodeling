@@ -56,9 +56,20 @@ def train(
         mixed_precision="bf16",
         gradient_accumulation_steps=effective_batch_size // microbatch_size
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_name, num_labels=1, ignore_mismatched_sizes=True
-    )
+    with accelerator.main_process_first():
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name, num_labels=1, ignore_mismatched_sizes=True
+        )
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        dataloader = get_train_dataloader(
+            datasets, 
+            microbatch_size, 
+            tokenizer,
+            filter_min_length_in_tokens=None,
+            filter_max_length_in_tokens=None,
+            seq_len=seq_len
+        )
+        
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
@@ -71,15 +82,7 @@ def train(
                 if layer_num < freeze_layers:
                     p.requires_grad = False
 
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    dataloader = get_train_dataloader(
-        datasets, 
-        microbatch_size, 
-        tokenizer,
-        filter_min_length_in_tokens=None,
-        filter_max_length_in_tokens=None,
-        seq_len=seq_len
-    )
+    
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=max_lr, betas=(0.9, 0.95) # , fused=True (doesn't work in torch < 2.0.0)
