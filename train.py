@@ -62,6 +62,7 @@ def train(
     model_name="sileod/deberta-v3-base-tasksource-nli",
     tokenizer_name="microsoft/deberta-v3-base",
     datasets="all",
+    add_human_and_assistant_labels=[],
     seq_len=1024,
     gradient_checkpointing=False,
     freeze_layers=0,

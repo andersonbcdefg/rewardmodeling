@@ -112,15 +112,15 @@ if __name__ == '__main__':
 
     # rank each response compared to the original
     pool = Pool(48)
-    for res in tqdm.tqdm(davinci_responses[20000:]):
+    for res in tqdm.tqdm(davinci_responses[23700:]):
         prompt, davinci_response = res['prompt'], res['response']
         if prompt not in original_responses_dict:
             continue
         original_response = original_responses_dict[prompt]
         candidates = [davinci_response, original_response]
         random.shuffle(candidates)
-        pool.apply_async(get_completion, args=(prompt, *candidates), callback=write_to_file)
-        time.sleep(0.3)
+        # pool.apply_async(get_completion, args=(prompt, *candidates), callback=write_to_file)
+        write_to_file(get_completion(prompt, *candidates))
 
     pool.close()
     pool.join()

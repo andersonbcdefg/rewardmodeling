@@ -387,7 +387,8 @@ def tokenize_fn_for_steamshp(examples, tokenizer, max_len=512):
 
 
 def get_train_dataloader(
-        datasets, 
+        datasets,
+        add_human_assistant_labels,
         batch_size, 
         tokenizer,
         filter_min_length_in_tokens=None,
@@ -397,7 +398,13 @@ def get_train_dataloader(
     if tokenizer is None:
         raise ValueError("Must specify tokenizer.")
 
-    datasets = get_train_datasets(datasets, filter_min_length_in_tokens, filter_max_length_in_tokens, tokenizer)
+    datasets = get_train_datasets(
+        datasets,
+        add_human_assistant_labels,
+        min_length_in_tokens=filter_min_length_in_tokens, 
+        max_length_in_tokens=filter_max_length_in_tokens, 
+        tokenizer=tokenizer
+    )
     lengths = [len(dataset) for dataset in datasets.values()]
     probabilities = [length / sum(lengths) for length in lengths]
     print("Interleaving datasets (this may take a while)...")
