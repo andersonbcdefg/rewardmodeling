@@ -1,0 +1,1 @@
+accelerate launch train.py --wandb_api_key=_ --project_name="reward_model_ablations" --datasets='["hh"]' --microbatch_size=4

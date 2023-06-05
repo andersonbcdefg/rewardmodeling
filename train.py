@@ -62,11 +62,11 @@ def train(
     model_name="sileod/deberta-v3-base-tasksource-nli",
     tokenizer_name="microsoft/deberta-v3-base",
     datasets="all",
-    add_human_and_assistant_labels=[],
+    add_human_assistant_labels=[],
     seq_len=1024,
     gradient_checkpointing=False,
     freeze_layers=0,
-    num_epochs=2,
+    num_epochs=5,
     max_lr=3.0e-5,
     grad_clip=None,
     effective_batch_size=64,
@@ -85,6 +85,7 @@ def train(
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         train_dataloader = get_train_dataloader(
             datasets, 
+            add_human_assistant_labels,
             microbatch_size, 
             tokenizer,
             filter_min_length_in_tokens=None,
