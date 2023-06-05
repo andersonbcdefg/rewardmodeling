@@ -76,6 +76,8 @@ def train(
     # save_every=1000,
     save_dir="checkpoints",
 ):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     accelerator = Accelerator(
         mixed_precision="bf16",
         gradient_accumulation_steps=effective_batch_size // microbatch_size
@@ -84,36 +86,37 @@ def train(
     eval_dataloaders = None
 
     # Load and tokenize only on the main process, then save results to disk
-    if accelerator.is_main_process:
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-        train_dataloader = get_train_dataloader(
-            datasets, 
-            add_human_assistant_labels,
-            microbatch_size, 
-            tokenizer,
-            filter_min_length_in_tokens=filter_min_length_in_tokens,
-            filter_max_length_in_tokens=filter_max_length_in_tokens,
-            seq_len=seq_len
-        )
-        torch.save(train_dataloader, os.path.join(save_dir, "train_dataloader.pt"))
+    if not (os.path.exists(os.path.join(save_dir, "train_dataloader.pt")) and os.path.exists(os.path.join(save_dir, "eval_dataloaders.pt"))):
+        if accelerator.is_main_process:
+            print("Preparing datasets (main process only)...")
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            train_dataloader = get_train_dataloader(
+                datasets, 
+                add_human_assistant_labels,
+                microbatch_size, 
+                tokenizer,
+                filter_min_length_in_tokens=filter_min_length_in_tokens,
+                filter_max_length_in_tokens=filter_max_length_in_tokens,
+                seq_len=seq_len
+            )
+            torch.save(train_dataloader, os.path.join(save_dir, "train_dataloader.pt"))
 
-        eval_dataloaders = get_eval_dataloaders(
-            tokenizer,
-            microbatch_size,
-            max_len=seq_len
-        )
-        torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
+            eval_dataloaders = get_eval_dataloaders(
+                tokenizer,
+                microbatch_size,
+                max_len=seq_len
+            )
+            torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
     accelerator.wait_for_everyone()
 
     # Then load dataset from the disk for all processes
-    if not accelerator.is_main_process:
-        train_dataloader = torch.load(os.path.join(save_dir, "train_dataloader.pt"))
-        eval_dataloaders = torch.load(os.path.join(save_dir, "eval_dataloaders.pt"))
+    train_dataloader = torch.load(os.path.join(save_dir, "train_dataloader.pt"))
+    eval_dataloaders = torch.load(os.path.join(save_dir, "eval_dataloaders.pt"))
     
-    
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_name, num_labels=1, ignore_mismatched_sizes=True
-    )
+    with accelerator.main_process_first():
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name, num_labels=1, ignore_mismatched_sizes=True
+        )
 
     if gradient_checkpointing:
         model.gradient_checkpointing_enable()

@@ -405,10 +405,14 @@ def get_train_dataloader(
         max_length_in_tokens=filter_max_length_in_tokens, 
         tokenizer=tokenizer
     )
-    lengths = [len(dataset) for dataset in datasets.values()]
-    probabilities = [length / sum(lengths) for length in lengths]
-    print("Interleaving datasets (this may take a while)...")
-    interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
+    
+    if len(datasets) > 1:
+        print("Interleaving datasets (this may take a while)...")
+        lengths = [len(dataset) for dataset in datasets.values()]
+        probabilities = [length / sum(lengths) for length in lengths]
+        interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
+    else:
+        interleaved = datasets[list(datasets.keys())[0]]
     print("Tokenizing...")
     tokenized = interleaved.map(
         partial(tokenize_function, tokenizer=tokenizer, max_len=seq_len),
