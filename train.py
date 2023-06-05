@@ -80,13 +80,14 @@ def train(
         os.makedirs(save_dir)
     accumulation_steps = effective_batch_size // microbatch_size
     
-    print(f"Effective batch size: {effective_batch_size}")
-    print(f"Microbatch size: {microbatch_size}")
-    print(f"Accumulation steps: {accumulation_steps}")
     accelerator = Accelerator(
         mixed_precision="bf16",
         gradient_accumulation_steps=accumulation_steps
     )
+    if accelerator.is_main_process:
+        print(f"Effective batch size: {effective_batch_size}")
+        print(f"Microbatch size: {microbatch_size}")
+        print(f"Accumulation steps: {accumulation_steps}")
     train_dataloader = None
     eval_dataloaders = None
 
