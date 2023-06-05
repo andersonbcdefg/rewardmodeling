@@ -65,7 +65,7 @@ def train(
     add_human_assistant_labels=[],
     seq_len=1024,
     filter_min_length_in_tokens=None,
-    filter_max_length_in_tokens=None,
+    filter_max_length_in_tokens=1200,
     gradient_checkpointing=False,
     freeze_layers=0,
     num_epochs=5,
