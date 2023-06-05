@@ -55,7 +55,7 @@ def process_anthropic(example):
     prompt, shared_suffix = split_by_assistant(shared_prefix)
 
     return {
-        "prompt": prompt,
+        "prompt": prompt.strip(),
         "preferred": shared_suffix + chosen_suffix,
         "dispreferred": shared_suffix + rejected_suffix,
     }
@@ -86,8 +86,8 @@ def process_webgpt(example):
         # dispreferred = ""
     return {
         "prompt": prompt,
-        "preferred": re.sub(pattern, "", preferred),
-        "dispreferred": re.sub(pattern, "", dispreferred),
+        "preferred": re.sub(pattern, "", preferred).strip(),
+        "dispreferred": re.sub(pattern, "", dispreferred).strip(),
     }
 
 
@@ -111,7 +111,21 @@ def process_synthetic(example):
         "dispreferred": example['response_b'] if example['preferred'] == "A" else example['response_a']
     }
 
-def get_train_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in_tokens=None, tokenizer=None):
+def add_human_and_assistant_to_prompt(prompt):
+    if not prompt.startswith("Human:"):
+        prompt = "Human: " + prompt
+    if not prompt.endswith("Assistant:"):
+        prompt = prompt.strip() + "\n\nAssistant:"
+    return prompt
+
+
+def get_train_datasets(
+        datasets=["hh"], 
+        add_human_assistant_labels=[],
+        min_length_in_tokens=None, 
+        max_length_in_tokens=None, 
+        tokenizer=None
+):
     if tokenizer is None:
         if min_length_in_tokens is not None or max_length_in_tokens is not None:
             raise ValueError("Cannot specify min_length_in_tokens or max_length_in_tokens without specifying tokenizer.")
@@ -130,11 +144,13 @@ def get_train_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in
 
     if "shp" in datasets:
         shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
-        shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
+        shp_dataset = shp_dataset.filter(
+            lambda example: example["score_ratio"] >= 2.0 and example["score_ratio"] <= 8.0
+        ).map(process_shp, remove_columns=shp_dataset.column_names)
         result["shp"] = shp_dataset
 
     if "webgpt" in datasets:
-        webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train")
+        webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train", download_mode="force_redownload")
         webgpt_dataset = webgpt_dataset.map(
             process_webgpt, remove_columns=webgpt_dataset.column_names
         ).filter(
@@ -169,6 +185,13 @@ def get_train_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in
 
     if "synth_gpteacher" in datasets:
         pass
+
+    # add human and assistant to prompt if applicable
+    for key in result.keys():
+        if key in add_human_assistant_labels:
+            result[key] = result[key].map(
+                lambda example: {"prompt": add_human_and_assistant_to_prompt(example['prompt'])}
+            )
 
     # filter all datasets for length
     if min_length_in_tokens is not None or max_length_in_tokens is not None:

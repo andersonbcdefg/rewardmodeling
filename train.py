@@ -1,9 +1,9 @@
 import os
 import fire
 import torch
+import numpy as np
 from accelerate import Accelerator
-from data import get_train_dataloader
-# from eval import eval_loop
+from data import get_train_dataloader, get_eval_dataloaders
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import wandb
 
@@ -33,11 +33,32 @@ def concat_batch(batch):
     )
     return input_ids, attn_mask
 
+def evaluate(accelerator, model, eval_dataloaders):
+    metrics = {}
+    model.eval()
+    with torch.no_grad():
+        for key in eval_dataloaders:
+            loader = eval_dataloaders[key]
+            correct = []
+            losses = []
+            for batch in loader:
+                input_ids, attn_mask = concat_batch(batch)
+                pref_rewards, dispref_rewards = model(input_ids, attention_mask=attn_mask).logits.chunk(2, dim=0)
+                batch_correct = (pref_rewards.view(-1) > dispref_rewards.view(-1)).long()
+                batch_loss = loss_fn(pref_rewards, dispref_rewards)
+                correct.extend(accelerator.gather(batch_correct).cpu().numpy())
+                losses.extend(accelerator.gather(batch_loss).cpu().numpy())
+            correct = correct[:len(loader.dataset)]
+            losses = losses[:len(loader.dataset)]
+            metrics[f"{key}_accuracy"] = np.mean(correct)
+            metrics[f"{key}_loss"] = np.mean(losses)
+
+    return metrics
 
 def train(
     wandb_api_key=None,
     project_name="train_reward_model",
-    group_name="DDP",
+    # group_name="DDP",
     model_name="sileod/deberta-v3-base-tasksource-nli",
     tokenizer_name="microsoft/deberta-v3-base",
     datasets="all",
@@ -49,7 +70,7 @@ def train(
     grad_clip=None,
     effective_batch_size=64,
     microbatch_size=16,
-    save_every=1000,
+    # save_every=1000,
     save_dir="checkpoints",
 ):
     accelerator = Accelerator(
@@ -61,13 +82,18 @@ def train(
             model_name, num_labels=1, ignore_mismatched_sizes=True
         )
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-        dataloader = get_train_dataloader(
+        train_dataloader = get_train_dataloader(
             datasets, 
             microbatch_size, 
             tokenizer,
             filter_min_length_in_tokens=None,
             filter_max_length_in_tokens=None,
             seq_len=seq_len
+        )
+        eval_dataloaders = get_eval_dataloaders(
+            tokenizer,
+            microbatch_size,
+            max_len=seq_len
         )
 
     if gradient_checkpointing:
@@ -91,7 +117,7 @@ def train(
     # constant learning rate
     scheduler_kwargs = {
         "max_lr": max_lr,
-        "total_steps": len(dataloader) * num_epochs,
+        "total_steps": len(train_dataloader) * num_epochs,
         "pct_start": 0.005,
         "div_factor": 10,
         "final_div_factor": 1,
@@ -100,12 +126,15 @@ def train(
     }
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_kwargs)
     (
-        dataloader,
+        train_dataloader,
         model,
         optimizer,
     ) = accelerator.prepare(
-        dataloader, model, optimizer
+        train_dataloader, model, optimizer
     )
+
+    for key in eval_dataloaders:
+        eval_dataloaders[key] = accelerator.prepare_data_loader(eval_dataloaders[key])
 
     if accelerator.is_main_process:
         if wandb_api_key is not None:
@@ -128,7 +157,7 @@ def train(
         print("Training begins!")
     total_tokens = 0
     for epoch in range(num_epochs):
-        for index, batch in enumerate(dataloader):
+        for batch in train_dataloader:
             input_ids, attn_mask = concat_batch(batch)
             total_tokens += input_ids.numel()
             with accelerator.accumulate(model):
@@ -151,17 +180,17 @@ def train(
                 
         
         # Evaluate & save model at the end of each epoch
-        print("Evaluating model... just kidding!")
+        print("Evaluating...")
+        metrics = evaluate(accelerator, model, eval_dataloaders)
+        if accelerator.is_main_process:
+            wandb.log(metrics)
 
         accelerator.wait_for_everyone()
-        accelerator.save_state(output_dir="checkpoints")
-        
-
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        print("Training complete. Saving final model...")
-        unwrapped_model = accelerator.unwrap_model(model)
-        torch.save(unwrapped_model.state_dict(), os.path.join(save_dir, "final_model.pt"))
+        if accelerator.is_main_process:
+            print("Saving model...")
+            unwrapped_model = accelerator.unwrap_model(model)
+            torch.save(unwrapped_model.state_dict(), os.path.join(save_dir, f"model_{epoch}.pt"))
+            print("Model saved!")
 
 if __name__ == "__main__":
     fire.Fire(train)
