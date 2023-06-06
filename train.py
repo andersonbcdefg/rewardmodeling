@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from accelerate import Accelerator
 from data import get_train_dataloader, get_eval_dataloaders
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoConfig
 import wandb
 
 
@@ -66,7 +66,10 @@ def train(
     freeze_layers=0,
     num_epochs=5,
     max_lr=3.0e-5,
+    lr_decay_factor=1.0,
     grad_clip=None,
+    hidden_dropout_prob=0.1,
+    attn_dropout_prob=0.1,
     effective_batch_size=64,
     microbatch_size=16,
     # save_every=1000,
@@ -89,8 +92,12 @@ def train(
     eval_dataloaders = torch.load(os.path.join(data_dir, "eval_dataloaders.pt"))
     
     with accelerator.main_process_first():
+        config = AutoConfig.from_pretrained(model_name)
+        config.hidden_dropout_prob = hidden_dropout_prob
+        config.attention_probs_dropout_prob = attn_dropout_prob
+        config.num_labels = 1
         model = AutoModelForSequenceClassification.from_pretrained(
-            model_name, num_labels=1, ignore_mismatched_sizes=True
+            model_name, config=config, ignore_mismatched_sizes=True
         )
 
     if gradient_checkpointing:
@@ -115,7 +122,7 @@ def train(
         "total_steps": len(train_dataloader) * num_epochs,
         "pct_start": 0.005,
         "div_factor": 10,
-        "final_div_factor": 1,
+        "final_div_factor": lr_decay_factor,
         "anneal_strategy": "linear",
         "three_phase": False,
     }

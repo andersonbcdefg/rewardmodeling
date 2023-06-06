@@ -172,7 +172,7 @@ TRAIN_DATASETS = {
         "processing_fn": process_synthetic,
     },
     "synth_sharegpt": {
-        "hub_url": "andersonbcdefg/sharegpt_reward_modeling_pairwise",
+        "hub_url": "andersonbcdefg/sharegpt_reward_modeling_pairwise_no_as_an_ai",
         "split": "train",
         "filter_fn": None,
         "processing_fn": process_synthetic,
