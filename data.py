@@ -182,7 +182,7 @@ TRAIN_DATASETS = {
 EVAL_DATASETS = {
     "hh": {
         "hub_url": "Anthropic/hh-rlhf",
-        "split": "validation",
+        "split": "test",
         "filter_fn": None,
         "processing_fn": process_anthropic,
     },
@@ -405,6 +405,7 @@ def get_train_dataloader(
         print("Interleaving datasets (this may take a while)...")
         lengths = [len(dataset) for dataset in datasets.values()]
         probabilities = [length / sum(lengths) for length in lengths]
+        print([f"{n}: {l}" for n, l in zip(datasets.keys(),lengths)])
         interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
     else:
         interleaved = datasets[list(datasets.keys())[0]]
