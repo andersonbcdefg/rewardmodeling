@@ -233,6 +233,7 @@ def get_datasets(
         if registry[ds_name]["filter_fn"] is not None:
             loaded = loaded.filter(registry[ds_name]["filter_fn"])
         if registry[ds_name]["processing_fn"] is not None:
+            print(loaded[0].keys())
             loaded = loaded.map(registry[ds_name]["processing_fn"], remove_columns=loaded.column_names).filter(
                 lambda example: example["preferred"] != "" and example["dispreferred"] != ""
             )
@@ -479,6 +480,7 @@ def prepare_data(
 ):
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    print("=== PREPARING TRAIN DATALOADER ===")
     train_dataloader = get_train_dataloader(
         train_datasets, 
         add_human_assistant_labels,
@@ -493,6 +495,7 @@ def prepare_data(
         "datasets": train_datasets,
         }, os.path.join(save_dir, "train_dataloader.pt"))
 
+    print("=== PREPARING EVAL DATALOADERS ===")
     eval_dataloaders = get_eval_dataloaders(tokenizer, microbatch_size, seq_len)
     torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
 
