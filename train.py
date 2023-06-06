@@ -84,7 +84,7 @@ def train(
     # Then load dataset from the disk for all processes
     train_dataloader = torch.load(os.path.join(data_dir, "train_dataloader.pt"))
     datasets = train_dataloader["datasets"]
-    train_dataloader = train_dataloader["dataloader"]
+    train_dataloader = train_dataloader["train_dataloader"]
     eval_dataloaders = torch.load(os.path.join(data_dir, "eval_dataloaders.pt"))
     
     with accelerator.main_process_first():
