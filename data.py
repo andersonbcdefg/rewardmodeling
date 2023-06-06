@@ -194,6 +194,7 @@ EVAL_DATASETS = {
     },
     "alpaca_gpt4": {
         "hub_url": "tatsu-lab/alpaca_farm",
+        "subset": "alpaca_gpt4_preference",
         "split": "preference",
         "filter_fn": None,
         "processing_fn": process_alpaca,
@@ -201,6 +202,7 @@ EVAL_DATASETS = {
     "alpaca_human": {
         "hub_url": "tatsu-lab/alpaca_farm",
         "split": "preference",
+        "subset": "alpaca_human_preference",
         "filter_fn": None,
         "processing_fn": process_alpaca,
     },
@@ -229,7 +231,11 @@ def get_datasets(
     result = {}
     # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
     for ds_name in datasets:
-        loaded = load_dataset(registry[ds_name]["hub_url"], split=registry[ds_name]["split"])
+        if "subset" in registry[ds_name]:
+            subset = registry[ds_name]["subset"]
+            loaded = load_dataset(registry[ds_name]["hub_url"], subset, split=registry[ds_name]["split"])
+        else:
+            loaded = load_dataset(registry[ds_name]["hub_url"], split=registry[ds_name]["split"])
         if registry[ds_name]["filter_fn"] is not None:
             loaded = loaded.filter(registry[ds_name]["filter_fn"])
         if registry[ds_name]["processing_fn"] is not None:
