@@ -1,7 +1,6 @@
 accelerate==0.18.0
 fire==0.5.0
 torch==2.0.1
-torchvision==0.15.1
 transformers==4.22.1
 datasets==2.11.0
 wandb==0.13.10
