@@ -70,7 +70,6 @@ def train(
     effective_batch_size=64,
     microbatch_size=16,
     # save_every=1000,
-    eval_subsample_rate=10,
     data_dir="data",
     save_dir="checkpoints",
 ):
