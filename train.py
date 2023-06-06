@@ -146,7 +146,10 @@ def train(
                 "datasets": datasets,
             },
         )
-
+    print("Evaluating...")
+    metrics = evaluate(accelerator, model, eval_dataloaders)
+    if accelerator.is_main_process:
+        wandb.log(metrics)
     model.train()
     if accelerator.is_main_process:
         print("Training begins!")
@@ -186,6 +189,7 @@ def train(
             unwrapped_model = accelerator.unwrap_model(model)
             torch.save(unwrapped_model.state_dict(), os.path.join(save_dir, f"model_{epoch}.pt"))
             print("Model saved!")
+        model.train()
 
 if __name__ == "__main__":
     fire.Fire(train)
