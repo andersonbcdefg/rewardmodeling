@@ -55,17 +55,12 @@ def evaluate(accelerator, model, eval_dataloaders):
 
     return metrics
 
+# before running training, you need to prepare data by running data.py and saving dataloaders to disk
 def train(
     wandb_api_key=None,
     project_name="train_reward_model",
     # group_name="DDP",
     model_name="sileod/deberta-v3-base-tasksource-nli",
-    tokenizer_name="microsoft/deberta-v3-base",
-    datasets="all",
-    add_human_assistant_labels=[],
-    seq_len=1024,
-    filter_min_length_in_tokens=None,
-    filter_max_length_in_tokens=1200,
     gradient_checkpointing=False,
     freeze_layers=0,
     num_epochs=5,
@@ -74,6 +69,7 @@ def train(
     effective_batch_size=64,
     microbatch_size=16,
     # save_every=1000,
+    data_dir="data",
     save_dir="checkpoints",
 ):
     if not os.path.exists(save_dir):
@@ -84,40 +80,12 @@ def train(
         mixed_precision="bf16",
         gradient_accumulation_steps=accumulation_steps
     )
-    if accelerator.is_main_process:
-        print(f"Effective batch size: {effective_batch_size}")
-        print(f"Microbatch size: {microbatch_size}")
-        print(f"Accumulation steps: {accumulation_steps}")
-    train_dataloader = None
-    eval_dataloaders = None
-
-    # Load and tokenize only on the main process, then save results to disk
-    if not (os.path.exists(os.path.join(save_dir, "train_dataloader.pt")) and os.path.exists(os.path.join(save_dir, "eval_dataloaders.pt"))):
-        if accelerator.is_main_process:
-            print("Preparing datasets (main process only)...")
-            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-            train_dataloader = get_train_dataloader(
-                datasets, 
-                add_human_assistant_labels,
-                microbatch_size, 
-                tokenizer,
-                filter_min_length_in_tokens=filter_min_length_in_tokens,
-                filter_max_length_in_tokens=filter_max_length_in_tokens,
-                seq_len=seq_len
-            )
-            torch.save(train_dataloader, os.path.join(save_dir, "train_dataloader.pt"))
-
-            eval_dataloaders = get_eval_dataloaders(
-                tokenizer,
-                microbatch_size,
-                max_len=seq_len
-            )
-            torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
-    accelerator.wait_for_everyone()
 
     # Then load dataset from the disk for all processes
-    train_dataloader = torch.load(os.path.join(save_dir, "train_dataloader.pt"))
-    eval_dataloaders = torch.load(os.path.join(save_dir, "eval_dataloaders.pt"))
+    train_dataloader = torch.load(os.path.join(data_dir, "train_dataloader.pt"))
+    datasets = train_dataloader["datasets"]
+    train_dataloader = train_dataloader["dataloader"]
+    eval_dataloaders = torch.load(os.path.join(data_dir, "eval_dataloaders.pt"))
     
     with accelerator.main_process_first():
         model = AutoModelForSequenceClassification.from_pretrained(

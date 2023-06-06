@@ -1,3 +1,4 @@
+import os
 import re
 import fire
 from functools import partial
@@ -17,7 +18,6 @@ def process_shp(example):
         "preferred": preferred,
         "dispreferred": dispreferred,
     }
-
 
 def split_by_prefix(A, B):
     shared_prefix = ""
@@ -387,17 +387,18 @@ def get_train_dataloader(
         tokenizer,
         filter_min_length_in_tokens=None,
         filter_max_length_in_tokens=None,
-        seq_len=1024
+        seq_len=1024,
 ):
     if tokenizer is None:
         raise ValueError("Must specify tokenizer.")
 
-    datasets = get_train_datasets(
+    datasets = get_datasets(
         datasets,
         add_human_assistant_labels,
         min_length_in_tokens=filter_min_length_in_tokens, 
         max_length_in_tokens=filter_max_length_in_tokens, 
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        train=True
     )
     
     if len(datasets) > 1:
@@ -407,6 +408,7 @@ def get_train_dataloader(
         interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
     else:
         interleaved = datasets[list(datasets.keys())[0]]
+    
     print("Tokenizing...")
     tokenized = interleaved.map(
         partial(tokenize_function, tokenizer=tokenizer, max_len=seq_len),
@@ -449,50 +451,50 @@ def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):
 
 
 def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
-    eval_datasets = get_eval_datasets(datasets="all", tokenizer=tokenizer, max_length_in_tokens=1024)
+    eval_datasets = get_datasets(datasets="all", tokenizer=tokenizer, max_length_in_tokens=1024, train=False)
     shp, hh, alpaca_gpt4, alpaca_human = (
         eval_datasets["shp"],
         eval_datasets["hh"],
         eval_datasets["alpaca_gpt4"],
         eval_datasets["alpaca_human"],
     )
-    shp_loader, hh_loader, alpaca_gpt4_loader, alpaca_human_loader = map(
-        lambda x: to_eval_dataloader(x, tokenizer, bsz, max_len, steamshp=steamshp),
-        [shp, hh, alpaca_gpt4, alpaca_human],
-    )
+
     return {
-        "shp": shp_loader,
-        "hh": hh_loader,
-        "alpaca_gpt4": alpaca_gpt4_loader,
-        "alpaca_human": alpaca_human_loader,
+        "shp": to_eval_dataloader(shp, tokenizer, bsz, max_len, steamshp=steamshp),
+        "hh": to_eval_dataloader(hh, tokenizer, bsz, max_len, steamshp=steamshp),
+        "alpaca_gpt4": to_eval_dataloader(alpaca_gpt4, tokenizer, bsz, max_len, steamshp=steamshp),
+        "alpaca_human": to_eval_dataloader(alpaca_human, tokenizer, bsz, max_len, steamshp=steamshp),
     }
 
 def prepare_data(
     tokenizer_name="microsoft/deberta-v3-base",
-    datasets="all",
+    train_datasets=["hh"],
     add_human_assistant_labels=[],
-    seq_len=1024,
     filter_min_length_in_tokens=None,
-    filter_max_length_in_tokens=1200,
-    effective_batch_size=64,
+    filter_max_length_in_tokens=1024,
+    seq_len=1024,
     microbatch_size=16,
     save_dir="data",      
 ):
-    print(f"Effective batch size: {effective_batch_size}")
-    print(f"Microbatch size: {microbatch_size}")
-    print(f"Accumulation steps: {accumulation_steps}")
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     train_dataloader = get_train_dataloader(
-        datasets, 
+        train_datasets, 
         add_human_assistant_labels,
         microbatch_size, 
         tokenizer,
-        filter_min_length_in_tokens=filter_min_length_in_tokens,
-        filter_max_length_in_tokens=filter_max_length_in_tokens,
-        seq_len=seq_len
+        filter_min_length_in_tokens,
+        filter_max_length_in_tokens,
+        seq_len
     )
-    torch.save(train_dataloader, os.path.join(save_dir, "train_dataloader.pt"))
+    torch.save({
+        "train_dataloader": train_dataloader,
+        "datasets": train_datasets,
+        }, os.path.join(save_dir, "train_dataloader.pt"))
+
+    eval_dataloaders = get_eval_dataloaders(tokenizer, microbatch_size, seq_len)
+    torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
+
 
 
 if __name__ == "__main__":
