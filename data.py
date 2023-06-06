@@ -416,6 +416,7 @@ def get_train_dataloader(
         interleaved =  interleave_datasets([d for _, d in datasets.items()], probabilities=probabilities, seed=42)
     else:
         interleaved = datasets[list(datasets.keys())[0]]
+        interleaved = interleaved.shuffle(seed=42).flatten_indices()
     
     print("Tokenizing...")
     tokenized = interleaved.map(
