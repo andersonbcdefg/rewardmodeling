@@ -437,7 +437,9 @@ def get_train_dataloader(
     return dataloader
 
 
-def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):
+def to_eval_dataloader(dataset, tokenizer, bsz, max_len, subsample_rate, steamshp=False):
+    if subsample_rate is not None and subsample_rate > 1:
+        dataset = dataset.select(range(0, len(dataset), subsample_rate))
     if steamshp:
         tokenized = dataset.map(
             partial(tokenize_fn_for_steamshp, tokenizer=tokenizer, max_len=max_len),
@@ -459,7 +461,7 @@ def to_eval_dataloader(dataset, tokenizer, bsz, max_len, steamshp=False):
     )
 
 
-def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
+def get_eval_dataloaders(tokenizer, bsz, max_len, subsample_rate=10, steamshp=False):
     eval_datasets = get_datasets(datasets="all", tokenizer=tokenizer, max_length_in_tokens=1024, train=False)
     shp, hh, alpaca_gpt4, alpaca_human = (
         eval_datasets["shp"],
@@ -469,10 +471,10 @@ def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
     )
 
     return {
-        "shp": to_eval_dataloader(shp, tokenizer, bsz, max_len, steamshp=steamshp),
-        "hh": to_eval_dataloader(hh, tokenizer, bsz, max_len, steamshp=steamshp),
-        "alpaca_gpt4": to_eval_dataloader(alpaca_gpt4, tokenizer, bsz, max_len, steamshp=steamshp),
-        "alpaca_human": to_eval_dataloader(alpaca_human, tokenizer, bsz, max_len, steamshp=steamshp),
+        "shp": to_eval_dataloader(shp, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
+        "hh": to_eval_dataloader(hh, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
+        "alpaca_gpt4": to_eval_dataloader(alpaca_gpt4, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
+        "alpaca_human": to_eval_dataloader(alpaca_human, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
     }
 
 def prepare_data(
@@ -483,6 +485,7 @@ def prepare_data(
     filter_max_length_in_tokens=1024,
     seq_len=1024,
     microbatch_size=16,
+    eval_subsample_rate=10,
     save_dir="data",      
 ):
 
@@ -503,7 +506,7 @@ def prepare_data(
         }, os.path.join(save_dir, "train_dataloader.pt"))
 
     print("=== PREPARING EVAL DATALOADERS ===")
-    eval_dataloaders = get_eval_dataloaders(tokenizer, microbatch_size, seq_len)
+    eval_dataloaders = get_eval_dataloaders(tokenizer, microbatch_size * 4, seq_len, subsample_rate=eval_subsample_rate)
     torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
 
 
