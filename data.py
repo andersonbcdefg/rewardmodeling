@@ -1,11 +1,9 @@
 import re
+import fire
 from functools import partial
-from itertools import chain
 import torch
-# import matplotlib.pyplot as plt
 from datasets import load_dataset, interleave_datasets
-from transformers import DefaultDataCollator
-
+from transformers import DefaultDataCollator, AutoTokenizer
 
 def process_shp(example):
     if example["labels"] == 1:
@@ -60,6 +58,12 @@ def process_anthropic(example):
         "dispreferred": shared_suffix + rejected_suffix,
     }
 
+def process_gptj(example):
+    return {
+        "prompt": example["prompt"],
+        "preferred": example["chosen"],
+        "dispreferred": example["rejected"],
+    }
 
 def process_webgpt(example):
     # Define the regex pattern
@@ -118,73 +122,121 @@ def add_human_and_assistant_to_prompt(prompt):
         prompt = prompt.strip() + "\n\nAssistant:"
     return prompt
 
+TRAIN_DATASETS = {
+    "hh": {
+        "hub_url": "Anthropic/hh-rlhf",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_anthropic,
+    },
+    "shp": {
+        "hub_url": "stanfordnlp/SHP",
+        "split": "train",
+        "filter_fn": lambda example: example["score_ratio"] >= 2.0 and example["score_ratio"] <= 8.0,
+        "processing_fn": process_shp,
+    },
+    "webgpt": {
+        "hub_url": "openai/webgpt_comparisons",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_webgpt,
+    },
+    "summarize": {
+        "hub_url": "openai/summarize_from_feedback",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": None,
+    },
+    "synth_gptj": {
+        "hub_url": "Dahoas/synthetic-instruct-gptj-pairwise",
+        "split": "train",
+        "filter_fn": None, 
+        "processing_fn": process_gptj,
+    },
+    "synth_dolly": {
+        "hub_url": "andersonbcdefg/dolly_reward_modeling_pairwise",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_synthetic,
+    },
+    "synth_redteam": {
+        "hub_url": "andersonbcdefg/red_teaming_reward_modeling_pairwise_no_as_an_ai",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_synthetic,
+    },
+    "synth_gpteacher": {
+        "hub_url": "andersonbcdefg/gpteacher_reward_modeling_pairwise",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_synthetic,
+    },
+    "synth_sharegpt": {
+        "hub_url": "andersonbcdefg/sharegpt_reward_modeling_pairwise",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_synthetic,
+    },
+}
 
-def get_train_datasets(
+EVAL_DATASETS = {
+    "hh": {
+        "hub_url": "Anthropic/hh-rlhf",
+        "split": "validation",
+        "filter_fn": None,
+        "processing_fn": process_anthropic,
+    },
+    "shp": {
+        "hub_url": "stanfordnlp/SHP",
+        "split": "test",
+        "filter_fn": None,
+        "processing_fn": process_shp,
+    },
+    "alpaca_gpt4": {
+        "hub_url": "tatsu-lab/alpaca_farm",
+        "split": "preference",
+        "filter_fn": None,
+        "processing_fn": process_alpaca,
+    },
+    "alpaca_human": {
+        "hub_url": "tatsu-lab/alpaca_farm",
+        "split": "preference",
+        "filter_fn": None,
+        "processing_fn": process_alpaca,
+    },
+}
+
+def get_datasets(
         datasets=["hh"], 
         add_human_assistant_labels=[],
         min_length_in_tokens=None, 
         max_length_in_tokens=None, 
-        tokenizer=None
+        tokenizer=None,
+        train=True
 ):
+    if train:
+        registry=TRAIN_DATASETS
+    else:
+        registry=EVAL_DATASETS
+
     if tokenizer is None:
         if min_length_in_tokens is not None or max_length_in_tokens is not None:
             raise ValueError("Cannot specify min_length_in_tokens or max_length_in_tokens without specifying tokenizer.")
     
     if datasets == "all":
-        datasets = ["hh", "shp", "webgpt", "summarize", "synth_gptj", "synth_dolly", "synth_redteam", "synth_gpteacher"]
+        datasets = list(registry.keys())
 
     result = {}
     # process all datasets to have the same 3 columns: prompt, preferred, dispreferred
-    if "hh" in datasets:
-        hh_dataset = load_dataset("Anthropic/hh-rlhf", split="train")
-        hh_dataset = hh_dataset.map(
-            process_anthropic, remove_columns=hh_dataset.column_names
-        )
-        result["hh"] = hh_dataset
-
-    if "shp" in datasets:
-        shp_dataset = load_dataset("stanfordnlp/SHP", split="train")
-        shp_dataset = shp_dataset.filter(
-            lambda example: example["score_ratio"] >= 2.0 and example["score_ratio"] <= 8.0
-        ).map(process_shp, remove_columns=shp_dataset.column_names)
-        result["shp"] = shp_dataset
-
-    if "webgpt" in datasets:
-        webgpt_dataset = load_dataset("openai/webgpt_comparisons", split="train", download_mode="force_redownload")
-        webgpt_dataset = webgpt_dataset.map(
-            process_webgpt, remove_columns=webgpt_dataset.column_names
-        ).filter(
-            lambda example: example["preferred"] != "" and example["dispreferred"] != ""
-        )
-        result["webgpt"] = webgpt_dataset
-
-    if "summarize" in datasets:
-        pass
-
-    if "synth_gptj" in datasets:
-        synth_gptj_dataset = load_dataset('Dahoas/synthetic-instruct-gptj-pairwise', split='train')
-        synth_gptj_dataset = synth_gptj_dataset.map(
-            lambda example: {
-                "prompt": example["prompt"],
-                "preferred": example["chosen"],
-                "dispreferred": example["rejected"],
-            },
-            remove_columns=synth_gptj_dataset.column_names
-        )
-        result["synth_gptj"] = synth_gptj_dataset
-
-    if "synth_dolly" in datasets:
-        synth_dolly_dataset = load_dataset("andersonbcdefg/dolly_reward_modeling_pairwise", split="train")
-        synth_dolly_dataset = synth_dolly_dataset.map(process_synthetic, remove_columns=synth_dolly_dataset.column_names)
-        result["synth_dolly"] = synth_dolly_dataset
-
-    if "synth_redteam" in datasets:
-        synth_redteam_dataset = load_dataset("andersonbcdefg/red_teaming_reward_modeling_pairwise_no_as_an_ai", split="train")
-        synth_redteam_dataset = synth_redteam_dataset.map(process_synthetic, remove_columns=synth_redteam_dataset.column_names)
-        result["synth_redteam"] = synth_redteam_dataset
-
-    if "synth_gpteacher" in datasets:
-        pass
+    for ds_name in datasets:
+        loaded = load_dataset(registry[ds_name]["hub_url"], split=registry[ds_name]["split"])
+        if registry[ds_name]["filter_fn"] is not None:
+            loaded = loaded.filter(registry[ds_name]["filter_fn"])
+        if registry[ds_name]["processing_fn"] is not None:
+            loaded = loaded.map(registry[ds_name]["processing_fn"], remove_columns=loaded.column_names).filter(
+                lambda example: example["preferred"] != "" and example["dispreferred"] != ""
+            )
+        result[ds_name] = loaded
 
     # add human and assistant to prompt if applicable
     for key in result.keys():
@@ -209,64 +261,6 @@ def get_train_datasets(
     for key, dataset in result.items():
         print(f"Dataset {key} has {len(dataset)} examples.")
     return result
-
-
-def get_eval_datasets(datasets=["hh"], min_length_in_tokens=None, max_length_in_tokens=None, tokenizer=None):
-    if tokenizer is None:
-        if min_length_in_tokens is not None or max_length_in_tokens is not None:
-            raise ValueError("Cannot specify min_length_in_tokens or max_length_in_tokens when specifying tokenizer.")
-        
-    if datasets == "all":
-        datasets = ["hh", "shp", "alpaca_gpt4", "alpaca_human"]
-
-    result = {}
-    
-    if "hh" in datasets:
-        hh_dataset = load_dataset("Anthropic/hh-rlhf", split="test")
-        hh_dataset = hh_dataset.map(
-            process_anthropic, remove_columns=hh_dataset.column_names
-        )
-        result["hh"] = hh_dataset
-
-    if "shp" in datasets:
-        shp_dataset = load_dataset("stanfordnlp/SHP", split="validation")
-        shp_dataset = shp_dataset.map(process_shp, remove_columns=shp_dataset.column_names)
-        result["shp"] = shp_dataset
-    
-    if "alpaca_gpt4" in datasets:
-        alpaca_gpt4_dataset = load_dataset(
-            "tatsu-lab/alpaca_farm", "alpaca_gpt4_preference", split="preference"
-        )
-        alpaca_gpt4_dataset = alpaca_gpt4_dataset.map(
-            process_alpaca, remove_columns=alpaca_gpt4_dataset.column_names
-        )
-        result["alpaca_gpt4"] = alpaca_gpt4_dataset
-
-    if "alpaca_human" in datasets:
-        alpaca_human_dataset = load_dataset(
-            "tatsu-lab/alpaca_farm", "alpaca_human_preference", split="preference"
-        )
-        alpaca_human_dataset = alpaca_human_dataset.map(
-            process_alpaca, remove_columns=alpaca_human_dataset.column_names
-        )
-        result["alpaca_human"] = alpaca_human_dataset
-
-    if min_length_in_tokens is not None or max_length_in_tokens is not None:
-        for key in result.keys():
-            result[key] = result[key].map(
-                lambda example: {"length": len(tokenizer(example['prompt']).input_ids) + \
-                                max(len(tokenizer(example['preferred']).input_ids), 
-                                    len(tokenizer(example['dispreferred']).input_ids))},
-            )
-            if min_length_in_tokens is not None:
-                result[key] = result[key].filter(lambda example: example['length'] >= min_length_in_tokens)
-            if max_length_in_tokens is not None:
-                result[key] = result[key].filter(lambda example: example['length'] <= max_length_in_tokens)
-    
-    for key, dataset in result.items():
-        print(f"Dataset {key} has {len(dataset)} examples.")
-    return result
-
 
 def tokenize_function(examples, tokenizer, max_len, use_special_tokens=True):
     n_examples = len(examples["prompt"])
@@ -472,3 +466,34 @@ def get_eval_dataloaders(tokenizer, bsz, max_len, steamshp=False):
         "alpaca_gpt4": alpaca_gpt4_loader,
         "alpaca_human": alpaca_human_loader,
     }
+
+def prepare_data(
+    tokenizer_name="microsoft/deberta-v3-base",
+    datasets="all",
+    add_human_assistant_labels=[],
+    seq_len=1024,
+    filter_min_length_in_tokens=None,
+    filter_max_length_in_tokens=1200,
+    effective_batch_size=64,
+    microbatch_size=16,
+    save_dir="data",      
+):
+    print(f"Effective batch size: {effective_batch_size}")
+    print(f"Microbatch size: {microbatch_size}")
+    print(f"Accumulation steps: {accumulation_steps}")
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    train_dataloader = get_train_dataloader(
+        datasets, 
+        add_human_assistant_labels,
+        microbatch_size, 
+        tokenizer,
+        filter_min_length_in_tokens=filter_min_length_in_tokens,
+        filter_max_length_in_tokens=filter_max_length_in_tokens,
+        seq_len=seq_len
+    )
+    torch.save(train_dataloader, os.path.join(save_dir, "train_dataloader.pt"))
+
+
+if __name__ == "__main__":
+    fire.Fire(prepare_data)
