@@ -64,7 +64,7 @@ def train(
     gradient_checkpointing=False,
     freeze_layers=0,
     num_epochs=5,
-    max_lr=3.0e-5,
+    max_lr=9.0e-6,
     grad_clip=None,
     effective_batch_size=64,
     microbatch_size=16,
