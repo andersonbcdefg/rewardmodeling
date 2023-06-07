@@ -68,8 +68,8 @@ def train(
     max_lr=3.0e-5,
     lr_decay_factor=1.0,
     grad_clip=None,
-    hidden_dropout_prob=0.1,
-    attn_dropout_prob=0.1,
+    hidden_dropout_prob=0.2,
+    attn_dropout_prob=0.2,
     effective_batch_size=64,
     microbatch_size=16,
     # save_every=1000,
@@ -156,7 +156,10 @@ def train(
     print("Evaluating...")
     metrics = evaluate(accelerator, model, eval_dataloaders)
     if accelerator.is_main_process:
-        wandb.log(metrics)
+        wandb.log({
+            "epoch": 0,
+            **metrics
+        })
     model.train()
     if accelerator.is_main_process:
         print("Training begins!")
@@ -188,7 +191,10 @@ def train(
         print("Evaluating...")
         metrics = evaluate(accelerator, model, eval_dataloaders)
         if accelerator.is_main_process:
-            wandb.log(metrics)
+            wandb.log({
+                "epoch": epoch + 1,
+                **metrics
+            })
 
         accelerator.wait_for_everyone()
         if accelerator.is_main_process:
