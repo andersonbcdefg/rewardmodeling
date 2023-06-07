@@ -147,7 +147,7 @@ def train(
             project=project_name,
             config={
                 "model_name": model_name,
-                # "model": model.config.__dict__,
+                "model_config": config.__dict__,
                 "freeze_layers": freeze_layers,
                 "scheduler": scheduler_kwargs,
                 "datasets": datasets,
