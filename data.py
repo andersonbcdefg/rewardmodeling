@@ -493,9 +493,10 @@ def prepare_data(
     seq_len=1024,
     microbatch_size=16,
     eval_subsample_rate=10,
-    save_dir="data",      
+    data_dir="data",      
 ):
-
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     print("=== PREPARING TRAIN DATALOADER ===")
     train_dataloader = get_train_dataloader(

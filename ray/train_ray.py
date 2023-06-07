@@ -191,9 +191,6 @@ def main():
         num_workers=NUM_WORKERS,
     ) 
 
-    
-
-
     # Define scaling and run configs
     scaling_config = ScalingConfig(
         num_workers=10, 
