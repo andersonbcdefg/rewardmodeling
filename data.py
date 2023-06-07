@@ -511,11 +511,11 @@ def prepare_data(
     torch.save({
         "train_dataloader": train_dataloader,
         "datasets": train_datasets,
-        }, os.path.join(save_dir, "train_dataloader.pt"))
+        }, os.path.join(data_dir, "train_dataloader.pt"))
 
     print("=== PREPARING EVAL DATALOADERS ===")
     eval_dataloaders = get_eval_dataloaders(tokenizer, microbatch_size * 4, seq_len, subsample_rate=eval_subsample_rate)
-    torch.save(eval_dataloaders, os.path.join(save_dir, "eval_dataloaders.pt"))
+    torch.save(eval_dataloaders, os.path.join(data_dir, "eval_dataloaders.pt"))
 
 
 
