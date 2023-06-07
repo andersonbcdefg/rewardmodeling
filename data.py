@@ -58,11 +58,18 @@ def process_anthropic(example):
         "dispreferred": shared_suffix + rejected_suffix,
     }
 
+def normalize_whitespace(s):
+    s = s.replace(".  ", ". ")
+    lines = s.split("\n")
+    lines = [line.strip() for line in lines]
+    lines = [line for line in lines if line != ""]
+    return "\n".join(lines)
+
 def process_gptj(example):
     return {
         "prompt": example["prompt"],
-        "preferred": example["chosen"],
-        "dispreferred": example["rejected"],
+        "preferred": normalize_whitespace(example["chosen"]),
+        "dispreferred": normalize_whitespace(example["rejected"]),
     }
 
 def process_webgpt(example):
