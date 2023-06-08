@@ -213,6 +213,12 @@ EVAL_DATASETS = {
         "filter_fn": None,
         "processing_fn": process_alpaca,
     },
+    "redteam": {
+        "hub_url": "andersonbcdefg/redteaming_eval_pairwise",
+        "split": "train",
+        "filter_fn": None,
+        "processing_fn": process_synthetic,
+    }
 }
 
 def get_datasets(
@@ -470,11 +476,12 @@ def to_eval_dataloader(dataset, tokenizer, bsz, max_len, subsample_rate, steamsh
 
 def get_eval_dataloaders(tokenizer, bsz, max_len, subsample_rate=10, steamshp=False):
     eval_datasets = get_datasets(datasets="all", tokenizer=tokenizer, max_length_in_tokens=1024, train=False)
-    shp, hh, alpaca_gpt4, alpaca_human = (
+    shp, hh, alpaca_gpt4, alpaca_human, redteam = (
         eval_datasets["shp"],
         eval_datasets["hh"],
         eval_datasets["alpaca_gpt4"],
         eval_datasets["alpaca_human"],
+        eval_datasets["redteam"]
     )
 
     return {
@@ -482,6 +489,7 @@ def get_eval_dataloaders(tokenizer, bsz, max_len, subsample_rate=10, steamshp=Fa
         "hh": to_eval_dataloader(hh, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
         "alpaca_gpt4": to_eval_dataloader(alpaca_gpt4, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
         "alpaca_human": to_eval_dataloader(alpaca_human, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
+        "redteam": to_eval_dataloader(redteam, tokenizer, bsz, max_len, subsample_rate=subsample_rate, steamshp=steamshp),
     }
 
 def prepare_data(
